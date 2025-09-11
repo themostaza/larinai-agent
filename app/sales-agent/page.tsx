@@ -44,7 +44,7 @@ export default function SalesAgentPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background text-foreground flex flex-col">
+    <div className="min-h-screen bg-black text-white flex flex-col">
       {/* Chat Container */}
       <div className="flex-1 flex flex-col max-w-4xl mx-auto w-full">
         {/* Messages Area */}
