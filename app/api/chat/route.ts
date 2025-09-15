@@ -96,6 +96,37 @@ quota_al_fat_flag	int	YES	10
 impianto_macchina_desc	nvarchar	YES	419
 report_category_type_name	nvarchar	YES	219
 report_product_type_name	nvarchar	YES	219
+
+{
+      "database_name": "DWH",
+      "schema_name": "ai",
+      "table_name": "fact_impegni_COM",
+      "table_type": "VIEW"
+    }
+Colonna	Tipo	Nullable	Lunghezza
+activity_id	uniqueidentifier	YES	-
+activity_type_id	nvarchar	YES	64
+activity_type_name	nvarchar	YES	255
+actual_duration_minutes	int	YES	10
+created_by_name	nvarchar	YES	200
+created_on	datetime	YES	-
+description	nvarchar	YES	-1
+modifiedonbehalfbyname	nvarchar	YES	200
+crm_owner_id	uniqueidentifier	YES	-
+crm_owner_name	nvarchar	YES	200
+regarding_object_id	uniqueidentifier	YES	-
+regarding_object_name	nvarchar	YES	4000
+regarding_objecttype_id	nvarchar	YES	64
+scheduled_duration_minutes	int	YES	10
+date_to	datetime	YES	-
+date_from	datetime	YES	-
+state_id	int	YES	10
+state_name	nvarchar	YES	255
+subject	nvarchar	YES	400
+account_id	uniqueidentifier	YES	-
+account_name	nvarchar	YES	4000
+commessa_id	nvarchar	YES	100
+
     }`,
         inputSchema: z.object({
           database: z.string().optional().describe('Il nome del database su cui eseguire la query (opzionale, usa il default se non specificato)'),
