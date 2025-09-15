@@ -41,13 +41,7 @@ async function getDbConnection(): Promise<sql.ConnectionPool> {
   return pool;
 }
 
-// Funzione per chiudere la connessione
-async function closeDbConnection(): Promise<void> {
-  if (pool) {
-    await pool.close();
-    pool = null;
-  }
-}
+
 
 // Interfaccia per la richiesta
 interface QueryRequest {

@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { useChat } from '@ai-sdk/react';
+import DatabaseQueryButton from '../components/DatabaseQueryButton';
 
 export default function SalesAgentPage() {
   const [input, setInput] = useState('');
@@ -113,56 +114,12 @@ export default function SalesAgentPage() {
                           return <span key={`${message.id}-${i}`}>{part.text}</span>;
                         case 'tool-read_sql_db':
                           return (
-                            <div key={`${message.id}-${i}`} className="mt-3 p-3 bg-gray-800 border border-blue-500 rounded-lg">
-                              <div className="text-blue-400 text-xs font-semibold mb-2 flex items-center">
-                                <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 1.79 4 4 4h8c0-2.21-1.79-4-4-4H4V7z" />
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7c0-2.21 1.79-4 4-4h8c2.21 0 4 1.79 4 4v10c0 2.21-1.79 4-4 4" />
-                                </svg>
-                                Query SQL: {'args' in part && part.args ? String((part.args as Record<string, unknown>).database || 'N/A') : 'N/A'}
-                              </div>
-                              {('args' in part && part.args) ? (
-                                <>
-                                  <div className="text-xs text-gray-400 mb-2">
-                                    <strong>Scopo:</strong> {String((part.args as Record<string, unknown>).purpose || '')}
-                                  </div>
-                                  <div className="text-xs text-gray-300 mb-2 font-mono bg-gray-900 p-2 rounded">
-                                    {String((part.args as Record<string, unknown>).query || '')}
-                                  </div>
-                                </>
-                              ) : null}
-                              {('result' in part && part.result) ? (
-                                <div className="mt-2">
-                                  {(part.result as Record<string, unknown>).success === false ? (
-                                    <div className="text-xs text-red-400 mb-1">
-                                      ❌ Errore: {String((part.result as Record<string, unknown>).error || 'Errore sconosciuto')}
-                                    </div>
-                                  ) : (
-                                    <>
-                                      <div className="text-xs text-green-400 mb-1 flex items-center justify-between">
-                                        <span>✓ Risultati ({String((part.result as Record<string, unknown>).rowCount || 0)} righe, {String((part.result as Record<string, unknown>).executionTime || 'N/A')})</span>
-                                        {Boolean((part.result as Record<string, unknown>).truncated) && (
-                                          <span className="text-yellow-400 text-xs">⚠️ Troncato</span>
-                                        )}
-                                      </div>
-                                      <div className="text-xs bg-gray-900 p-2 rounded max-h-32 overflow-y-auto">
-                                        <pre className="text-gray-300">{JSON.stringify((part.result as Record<string, unknown>).results, null, 2)}</pre>
-                                      </div>
-                                      {(part.result as Record<string, unknown>).queryType && (
-                                        <div className="text-xs text-blue-300 mt-1">
-                                          Tipo query: {String((part.result as Record<string, unknown>).queryType || 'N/A')}
-                                        </div>
-                                      )}
-                                    </>
-                                  )}
-                                </div>
-                              ) : null}
-                              {('state' in part && (part as Record<string, unknown>).state === 'input-streaming') ? (
-                                <div className="text-xs text-yellow-400">
-                                  🔄 Eseguendo query...
-                                </div>
-                              ) : null}
-                            </div>
+                            <DatabaseQueryButton
+                              key={`${message.id}-${i}`}
+                              part={part}
+                              messageId={message.id}
+                              partIndex={i}
+                            />
                           );
                         default:
                           return null;
