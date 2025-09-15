@@ -1,127 +1,230 @@
 'use client';
 
-import { useState } from 'react';
-
-interface Message {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-}
+import React, { useState } from 'react';
+import { useChat } from '@ai-sdk/react';
 
 export default function SalesAgentPage() {
-  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const { messages, sendMessage } = useChat();
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInput(e.target.value);
+    // Auto-resize textarea
+    e.target.style.height = 'auto';
+    e.target.style.height = e.target.scrollHeight + 'px';
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim()) return;
+    if (!input.trim() || isLoading) return;
 
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      role: 'user',
-      content: input
-    };
-
-    setMessages(prev => [...prev, userMessage]);
-    setInput('');
     setIsLoading(true);
-
-    // Simulazione risposta AI (per ora solo UI)
-    setTimeout(() => {
-      const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: 'Ciao! Sono l\'Agent Commerciale di Technowrapp. Al momento sto simulando le risposte. Una volta configurato con l\'AI SDK, potrò accedere ai tuoi dati CRM e fornire analisi dettagliate sui clienti e sulle performance commerciali.'
-      };
-      setMessages(prev => [...prev, assistantMessage]);
+    try {
+      await sendMessage({ text: input });
+      setInput('');
+      
+      // Reset textarea height
+      const textarea = document.querySelector('textarea');
+      if (textarea) {
+        textarea.style.height = 'auto';
+      }
+    } finally {
       setIsLoading(false);
-    }, 1500);
+    }
   };
 
   return (
-    <div className="min-h-screen bg-black text-white flex flex-col">
-      {/* Chat Container */}
-      <div className="flex-1 flex flex-col max-w-4xl mx-auto w-full">
-        {/* Messages Area */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
-          {messages.length === 0 && (
-            <div className="text-center py-12 sm:py-20">
-              <h3 className="text-xl font-semibold text-white mb-2">Inizia una conversazione</h3>
-              <p className="text-gray-400 max-w-md mx-auto">
-                Chiedi informazioni sui tuoi clienti, analisi dei dati CRM, o qualsiasi altra informazione commerciale.
-              </p>
-            </div>
-          )}
+    <>
+      <style jsx global>{`
+        /* Custom scrollbar styles for textarea - only show when scrolling is needed */
+        textarea {
+          scrollbar-width: none; /* Firefox - hide by default */
+          scrollbar-color: transparent transparent;
+        }
+        
+        textarea::-webkit-scrollbar {
+          width: 0px; /* Hide by default */
+        }
+        
+        /* Show scrollbar only when content overflows */
+        textarea:hover::-webkit-scrollbar,
+        textarea:focus::-webkit-scrollbar {
+          width: 8px;
+        }
+        
+        textarea:hover::-webkit-scrollbar-track,
+        textarea:focus::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        
+        textarea:hover::-webkit-scrollbar-thumb,
+        textarea:focus::-webkit-scrollbar-thumb {
+          background: rgba(255, 255, 255, 0.3);
+          border-radius: 4px;
+        }
+        
+        textarea:hover::-webkit-scrollbar-thumb:hover,
+        textarea:focus::-webkit-scrollbar-thumb:hover {
+          background: rgba(255, 255, 255, 0.5);
+        }
+        
+        textarea:hover::-webkit-scrollbar-button,
+        textarea:focus::-webkit-scrollbar-button {
+          display: none;
+        }
+        
+        /* Firefox - show scrollbar on hover/focus when needed */
+        textarea:hover,
+        textarea:focus {
+          scrollbar-width: thin;
+          scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
+        }
+      `}</style>
+      <div className="min-h-screen bg-black text-white flex flex-col relative">
+        {/* Messages Area - with bottom padding to avoid overlap with fixed input */}
+        <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 space-y-4 pb-32 sm:pb-40">
+          <div className="max-w-4xl mx-auto w-full">
+            {messages.length === 0 && (
+              <div className="text-center py-12 sm:py-20">
+                <h3 className="text-xl font-semibold text-white mb-2">Inizia una conversazione</h3>
+              </div>
+            )}
 
-          {messages.map((message) => (
-            <div
-              key={message.id}
-              className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-            >
+            {messages.map((message) => (
               <div
-                className={`max-w-xs sm:max-w-md lg:max-w-lg xl:max-w-xl px-4 py-3 rounded-2xl ${
-                  message.role === 'user'
-                    ? 'bg-white text-black'
-                    : 'bg-gray-800 text-white border border-gray-700'
-                }`}
+                key={message.id}
+                className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'} mb-4`}
               >
-                <div className="text-sm font-medium mb-1 opacity-60">
-                  {message.role === 'user' ? 'Tu' : 'Agent'}
-                </div>
-                <div className="whitespace-pre-wrap leading-relaxed">
-                  {message.content}
-                </div>
-              </div>
-            </div>
-          ))}
-
-          {isLoading && (
-            <div className="flex justify-start">
-              <div className="max-w-xs sm:max-w-md lg:max-w-lg xl:max-w-xl px-4 py-3 rounded-2xl bg-gray-800 text-white border border-gray-700">
-                <div className="text-sm font-medium mb-1 opacity-60">Agent</div>
-                <div className="flex items-center space-x-2">
-                  <div className="flex space-x-1">
-                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
-                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                <div
+                  className={`max-w-xs sm:max-w-md lg:max-w-lg xl:max-w-xl px-4 py-2 rounded-2xl ${
+                    message.role === 'user'
+                      ? 'bg-white text-black'
+                      : 'bg-gray-900 text-white border border-gray-700'
+                  }`}
+                >
+                  <div className="whitespace-pre-wrap leading-relaxed break-words">
+                    <span className="text-sm font-medium opacity-60">
+                      {message.role === 'user' ? 'Tu ' : 'AI '}
+                    </span>
+                    {message.parts.map((part, i) => {
+                      switch (part.type) {
+                        case 'text':
+                          return <span key={`${message.id}-${i}`}>{part.text}</span>;
+                        case 'tool-read_sql_db':
+                          return (
+                            <div key={`${message.id}-${i}`} className="mt-3 p-3 bg-gray-800 border border-blue-500 rounded-lg">
+                              <div className="text-blue-400 text-xs font-semibold mb-2 flex items-center">
+                                <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 1.79 4 4 4h8c0-2.21-1.79-4-4-4H4V7z" />
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7c0-2.21 1.79-4 4-4h8c2.21 0 4 1.79 4 4v10c0 2.21-1.79 4-4 4" />
+                                </svg>
+                                Query SQL: {'args' in part && part.args ? String((part.args as Record<string, unknown>).database || 'N/A') : 'N/A'}
+                              </div>
+                              {('args' in part && part.args) ? (
+                                <>
+                                  <div className="text-xs text-gray-400 mb-2">
+                                    <strong>Scopo:</strong> {String((part.args as Record<string, unknown>).purpose || '')}
+                                  </div>
+                                  <div className="text-xs text-gray-300 mb-2 font-mono bg-gray-900 p-2 rounded">
+                                    {String((part.args as Record<string, unknown>).query || '')}
+                                  </div>
+                                </>
+                              ) : null}
+                              {('result' in part && part.result) ? (
+                                <div className="mt-2">
+                                  {(part.result as Record<string, unknown>).success === false ? (
+                                    <div className="text-xs text-red-400 mb-1">
+                                      ❌ Errore: {String((part.result as Record<string, unknown>).error || 'Errore sconosciuto')}
+                                    </div>
+                                  ) : (
+                                    <>
+                                      <div className="text-xs text-green-400 mb-1 flex items-center justify-between">
+                                        <span>✓ Risultati ({String((part.result as Record<string, unknown>).rowCount || 0)} righe, {String((part.result as Record<string, unknown>).executionTime || 'N/A')})</span>
+                                        {Boolean((part.result as Record<string, unknown>).truncated) && (
+                                          <span className="text-yellow-400 text-xs">⚠️ Troncato</span>
+                                        )}
+                                      </div>
+                                      <div className="text-xs bg-gray-900 p-2 rounded max-h-32 overflow-y-auto">
+                                        <pre className="text-gray-300">{JSON.stringify((part.result as Record<string, unknown>).results, null, 2)}</pre>
+                                      </div>
+                                      {(part.result as Record<string, unknown>).queryType && (
+                                        <div className="text-xs text-blue-300 mt-1">
+                                          Tipo query: {String((part.result as Record<string, unknown>).queryType || 'N/A')}
+                                        </div>
+                                      )}
+                                    </>
+                                  )}
+                                </div>
+                              ) : null}
+                              {('state' in part && (part as Record<string, unknown>).state === 'input-streaming') ? (
+                                <div className="text-xs text-yellow-400">
+                                  🔄 Eseguendo query...
+                                </div>
+                              ) : null}
+                            </div>
+                          );
+                        default:
+                          return null;
+                      }
+                    })}
                   </div>
-                  <span className="text-gray-400 text-sm">Sto pensando...</span>
                 </div>
               </div>
-            </div>
-          )}
+            ))}
+
+            {isLoading && (
+              <div className="flex justify-start mb-4">
+                <div className="max-w-xs sm:max-w-md lg:max-w-lg xl:max-w-xl px-4 py-2 rounded-2xl bg-gray-800 text-white border border-gray-700">
+                  <div className="flex items-center space-x-2">
+                    <span className="text-sm font-medium opacity-60">AI </span>
+                    <div className="flex space-x-1">
+                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
+                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                    </div>
+                    <span className="text-gray-400 text-sm">Sto pensando...</span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* Input Area */}
-        <div className="border-t border-gray-800 p-4 sm:p-6">
-          <form onSubmit={handleSubmit} className="flex gap-3">
-            <input
-              value={input}
-              onChange={handleInputChange}
-              placeholder="Scrivi il tuo messaggio..."
-              className="flex-1 px-4 py-3 bg-gray-800 border border-gray-700 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-white focus:border-transparent resize-none text-sm sm:text-base"
-              disabled={isLoading}
-            />
-            <button
-              type="submit"
-              disabled={isLoading || !input.trim()}
-              className="px-4 py-3 bg-white text-black rounded-xl hover:bg-gray-100 disabled:bg-gray-600 disabled:text-gray-400 disabled:cursor-not-allowed transition-all duration-200 flex items-center justify-center"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-              </svg>
-            </button>
-          </form>
-          <p className="text-xs text-gray-500 mt-2 text-center">
-            verifica sempre le informazioni che ricevi dall&apos;agent
-          </p>
+        {/* Fixed Input Area */}
+        <div className="fixed bottom-0 left-0 right-0 bg-transparent sm:p-6 w-full">
+          <div className="max-w-4xl mx-auto w-full">
+            <form onSubmit={handleSubmit} className="flex gap-3 items-end">
+              <textarea
+                value={input}
+                onChange={handleInputChange}
+                placeholder="Scrivi il tuo messaggio..."
+                className="flex-1 px-4 py-3 bg-gray-800 border border-gray-700 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-white focus:border-transparent resize-none text-sm sm:text-base min-h-[48px] max-h-64 overflow-y-auto"
+                disabled={isLoading}
+                rows={1}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSubmit(e);
+                  }
+                }}
+              />
+              <button
+                type="submit"
+                disabled={isLoading || !input.trim()}
+                className="px-4 py-3 bg-white text-black rounded-xl hover:bg-gray-100 disabled:bg-gray-600 disabled:text-gray-400 disabled:cursor-not-allowed transition-all duration-200 flex items-center justify-center self-end h-12"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                </svg>
+              </button>
+            </form>
+            <p className="text-xs text-gray-500 mt-2 text-center bg-gray-900 w-fit mx-auto rounded-xl px-4 py-2 border border-gray-700">
+              verifica sempre le informazioni che ricevi dall&apos;agent
+            </p>
+          </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }
