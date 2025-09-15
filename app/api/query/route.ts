@@ -1,18 +1,53 @@
 import { NextRequest, NextResponse } from 'next/server';
-import mysql from 'mysql2/promise';
+import sql from 'mssql';
 import { Client as PgClient } from 'pg';
 import { identify } from 'sql-query-identifier';
 
 // Configurazione database dalle variabili d'ambiente
-const DB_CONFIG = {
-  host: process.env.DB_SERVER,
-  port: parseInt(process.env.DB_PORT || '3306'),
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
+const DB_CONFIG: sql.config = {
+  server: process.env.DB_SERVER!,
+  port: parseInt(process.env.DB_PORT || '1433'),
   database: process.env.DB_DATABASE || 'DWH',
-  // Tipo di database: 'mysql' o 'postgresql'
-  type: process.env.DB_TYPE || 'mysql'
+  user: process.env.DB_USER!,
+  password: process.env.DB_PASSWORD!,
+  options: {
+    encrypt: false,
+    trustServerCertificate: true,
+    enableArithAbort: true,
+    requestTimeout: 30000
+  },
+  pool: {
+    max: 10,
+    min: 0,
+    idleTimeoutMillis: 30000
+  }
 };
+
+// Pool di connessioni SQL Server
+let pool: sql.ConnectionPool | null = null;
+
+// Funzione per ottenere la connessione al database
+async function getDbConnection(): Promise<sql.ConnectionPool> {
+  if (!pool) {
+    pool = new sql.ConnectionPool(DB_CONFIG);
+    await pool.connect();
+    
+    pool.on('error', (error: Error) => {
+      console.error('Database pool error:', error);
+      pool = null;
+    });
+  }
+  
+  return pool;
+}
+
+// Funzione per chiudere la connessione
+async function closeDbConnection(): Promise<void> {
+  if (pool) {
+    await pool.close();
+    pool = null;
+  }
+}
 
 // Interfaccia per la richiesta
 interface QueryRequest {
@@ -73,33 +108,32 @@ function validateSQLQuery(query: string): { isValid: boolean; error?: string; ty
   }
 }
 
-// Funzione per eseguire query MySQL
-async function executeMySQL(query: string, database?: string): Promise<unknown[]> {
-  let connection;
+// Funzione per eseguire query SQL Server
+async function executeSQLServer(query: string, database?: string): Promise<unknown[]> {
   try {
-    const config = { ...DB_CONFIG };
-    if (database) {
-      config.database = database;
+    const connection = await getDbConnection();
+    
+    // Se viene specificato un database diverso, usa USE
+    if (database && database !== DB_CONFIG.database) {
+      await connection.request().query(`USE [${database}]`);
     }
-
-    connection = await mysql.createConnection(config as mysql.ConnectionOptions);
-    const [results] = await connection.execute(query);
-    return Array.isArray(results) ? results : [];
-  } finally {
-    if (connection) {
-      await connection.end();
-    }
+    
+    const result = await connection.request().query(query);
+    return result.recordset || [];
+  } catch (error) {
+    console.error('SQL Server query error:', error);
+    throw error;
   }
 }
 
-// Funzione per eseguire query PostgreSQL
+// Funzione per eseguire query PostgreSQL (mantenuta per compatibilità)
 async function executePostgreSQL(query: string, database?: string): Promise<unknown[]> {
   const client = new PgClient({
-    host: DB_CONFIG.host,
-    port: DB_CONFIG.port,
-    user: DB_CONFIG.user,
-    password: DB_CONFIG.password,
-    database: database || DB_CONFIG.database,
+    host: process.env.DB_SERVER,
+    port: parseInt(process.env.DB_PORT || '5432'),
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: database || process.env.DB_DATABASE,
   });
 
   try {
@@ -154,10 +188,14 @@ export async function POST(request: NextRequest) {
     let results;
     const executionStart = Date.now();
 
-    if (DB_CONFIG.type === 'postgresql') {
+    // Determina il tipo di database dalle variabili d'ambiente
+    const dbType = process.env.DB_TYPE || 'mssql';
+    
+    if (dbType === 'postgresql') {
       results = await executePostgreSQL(query, database);
     } else {
-      results = await executeMySQL(query, database);
+      // Default a SQL Server
+      results = await executeSQLServer(query, database);
     }
 
     const executionTime = Date.now() - executionStart;
@@ -209,39 +247,41 @@ export async function GET() {
   try {
     console.log('Testing database connection...');
     console.log('DB Config:', {
-      host: DB_CONFIG.host,
+      server: DB_CONFIG.server,
       port: DB_CONFIG.port,
       user: DB_CONFIG.user,
       database: DB_CONFIG.database,
-      type: DB_CONFIG.type
+      type: process.env.DB_TYPE || 'mssql'
     });
 
-    if (DB_CONFIG.type === 'postgresql') {
+    const dbType = process.env.DB_TYPE || 'mssql';
+    
+    if (dbType === 'postgresql') {
       const client = new PgClient({
-        host: DB_CONFIG.host,
-        port: DB_CONFIG.port,
-        user: DB_CONFIG.user,
-        password: DB_CONFIG.password,
-        database: DB_CONFIG.database,
+        host: process.env.DB_SERVER,
+        port: parseInt(process.env.DB_PORT || '5432'),
+        user: process.env.DB_USER,
+        password: process.env.DB_PASSWORD,
+        database: process.env.DB_DATABASE,
       });
 
       await client.connect();
       await client.query('SELECT 1');
       await client.end();
     } else {
-      const connection = await mysql.createConnection(DB_CONFIG);
-      await connection.execute('SELECT 1');
-      await connection.end();
+      // Test SQL Server connection
+      const connection = await getDbConnection();
+      await connection.request().query('SELECT 1 as test');
     }
 
     return NextResponse.json({ 
       success: true, 
       message: 'Connessione al database riuscita',
       config: {
-        host: DB_CONFIG.host,
+        server: DB_CONFIG.server,
         port: DB_CONFIG.port,
         database: DB_CONFIG.database,
-        type: DB_CONFIG.type
+        type: dbType
       }
     });
 
@@ -252,10 +292,10 @@ export async function GET() {
         success: false, 
         error: error instanceof Error ? error.message : 'Errore di connessione al database',
         config: {
-          host: DB_CONFIG.host,
+          server: DB_CONFIG.server,
           port: DB_CONFIG.port,
           database: DB_CONFIG.database,
-          type: DB_CONFIG.type
+          type: process.env.DB_TYPE || 'mssql'
         }
       },
       { status: 500 }
