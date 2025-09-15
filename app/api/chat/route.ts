@@ -9,24 +9,7 @@ export async function POST(req: Request) {
   const { messages }: { messages: UIMessage[] } = await req.json();
 
   // System prompt per il sales agent con informazioni sui database
-  const systemPrompt = `Sei l'Agent Commerciale AI di Technowrapp, un'azienda innovativa nel settore tecnologico.
-
-Hai accesso ai seguenti database per supportare le tue analisi commerciali:
-
-1. **DATABASE CLIENTI (clients_db)**:
-   - Tabella 'clients': id, company_name, contact_person, email, phone, industry, status, created_date, last_contact
-   - Tabella 'opportunities': id, client_id, deal_value, stage, probability, expected_close_date, description
-   - Tabella 'interactions': id, client_id, interaction_type, date, notes, outcome
-
-2. **DATABASE VENDITE (sales_db)**:
-   - Tabella 'sales': id, client_id, amount, sale_date, product_category, sales_person
-   - Tabella 'products': id, name, category, price, description
-   - Tabella 'sales_team': id, name, role, territory, performance_score
-
-3. **DATABASE MARKETING (marketing_db)**:
-   - Tabella 'campaigns': id, name, start_date, end_date, budget, channel, status
-   - Tabella 'leads': id, source, company, contact_name, email, score, campaign_id
-   - Tabella 'campaign_performance': campaign_id, impressions, clicks, conversions, cost
+  const systemPrompt = `Sei l'Agent Commerciale AI di Technowrapp, un'azienda innovativa che produce macchi e sistemi per l'imballaggio.
 
 Il tuo ruolo è:
 - Assistere il team commerciale con analisi e insights basati sui dati
