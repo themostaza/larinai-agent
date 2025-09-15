@@ -1,0 +1,230 @@
+'use client';
+
+import React, { useState, useEffect } from 'react';
+import { Menu, X, Plus, MessageCircle } from 'lucide-react';
+import { v4 as uuidv4 } from 'uuid';
+
+interface ChatSession {
+  id: string;
+  title: string;
+  createdAt: string | null;
+  updatedAt: string | null;
+  metadata?: Record<string, unknown> | null;
+}
+
+interface ChatSidebarProps {
+  currentSessionId: string;
+  onSessionSelect?: (sessionId: string) => void;
+}
+
+export default function ChatSidebar({ currentSessionId, onSessionSelect }: ChatSidebarProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Responsive behavior: open by default on desktop, closed on mobile
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth >= 1024) { // lg breakpoint
+        setIsOpen(true);
+      } else {
+        setIsOpen(false);
+      }
+    };
+
+    // Set initial state
+    handleResize();
+
+    // Add event listener
+    window.addEventListener('resize', handleResize);
+
+    // Cleanup
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Fetch chat sessions
+  useEffect(() => {
+    const fetchSessions = async () => {
+      try {
+        setIsLoading(true);
+        setError(null);
+
+        const response = await fetch('/api/chat/sessions');
+        const result = await response.json();
+
+        if (!result.success) {
+          throw new Error(result.error || 'Failed to fetch sessions');
+        }
+
+        setSessions(result.sessions || []);
+      } catch (err) {
+        console.error('Error fetching chat sessions:', err);
+        setError(err instanceof Error ? err.message : 'Failed to load chat sessions');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchSessions();
+  }, []);
+
+  const handleNewChat = () => {
+    const newSessionId = uuidv4();
+    const newTab = window.open(`/sales-agent/${newSessionId}`, '_blank');
+    if (newTab) {
+      newTab.focus();
+    }
+  };
+
+  const handleSessionClick = (sessionId: string) => {
+    if (sessionId !== currentSessionId) {
+      const newTab = window.open(`/sales-agent/${sessionId}`, '_blank');
+      if (newTab) {
+        newTab.focus();
+      }
+    }
+    
+    // Close sidebar on mobile after selection
+    if (window.innerWidth < 1024) {
+      setIsOpen(false);
+    }
+    
+    onSessionSelect?.(sessionId);
+  };
+
+  const formatDate = (dateString: string | null) => {
+    if (!dateString) return 'Data sconosciuta';
+    
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffTime = Math.abs(now.getTime() - date.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    if (diffDays === 1) return 'Oggi';
+    if (diffDays === 2) return 'Ieri';
+    if (diffDays <= 7) return `${diffDays - 1} giorni fa`;
+    
+    return date.toLocaleDateString('it-IT', { 
+      day: 'numeric', 
+      month: 'short',
+      year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
+    });
+  };
+
+  return (
+    <>
+      {/* Hamburger Button - Mobile and Desktop */}
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="fixed top-4 left-4 z-50 p-2 bg-gray-800 text-white rounded-lg border border-gray-700 hover:bg-gray-700 transition-colors"
+        aria-label="Toggle sidebar"
+        style={{ display: isOpen ? 'none' : 'block' }}
+      >
+        <Menu size={20} />
+      </button>
+
+      {/* Overlay for mobile */}
+      {isOpen && (
+        <div
+          className="lg:hidden fixed inset-0 bg-black bg-opacity-50 z-40"
+          onClick={() => setIsOpen(false)}
+        />
+      )}
+
+      {/* Sidebar */}
+      <div className={`
+        fixed left-0 top-0 h-full bg-gray-900 border-r border-gray-700 z-40
+        transform transition-transform duration-300 ease-in-out
+        ${isOpen ? 'translate-x-0' : '-translate-x-full'}
+        w-80 flex flex-col
+      `}>
+        {/* Header */}
+         <div className="p-4 border-b border-gray-700">
+           <div className="flex items-center justify-between mb-4">
+             <h2 className="text-lg font-semibold text-white">Chat</h2>
+             <button
+               onClick={() => setIsOpen(false)}
+               className="p-1 text-gray-400 hover:text-white transition-colors"
+               aria-label="Close sidebar"
+             >
+               <X size={20} />
+             </button>
+           </div>
+          
+          {/* New Chat Button */}
+          <button
+            onClick={handleNewChat}
+            className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-gray-800 text-white border border-gray-700 rounded-lg hover:bg-gray-700 transition-colors font-medium"
+          >
+            <Plus size={18} />
+            Nuova chat
+          </button>
+        </div>
+
+        {/* Sessions List */}
+        <div className="flex-1 overflow-y-auto">
+          {isLoading ? (
+            <div className="p-4 text-center">
+              <div className="flex items-center justify-center space-x-2">
+                <div className="w-4 h-4 bg-gray-400 rounded-full animate-bounce"></div>
+                <div className="w-4 h-4 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                <div className="w-4 h-4 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+              </div>
+              <p className="text-gray-400 text-sm mt-2">Caricamento chat...</p>
+            </div>
+          ) : error ? (
+            <div className="p-4 text-center">
+              <p className="text-red-400 text-sm">{error}</p>
+            </div>
+          ) : sessions.length === 0 ? (
+            <div className="p-4 text-center">
+              <MessageCircle size={32} className="mx-auto text-gray-500 mb-2" />
+              <p className="text-gray-400 text-sm">Nessuna chat trovata</p>
+              <p className="text-gray-500 text-xs mt-1">Crea la tua prima chat!</p>
+            </div>
+          ) : (
+            <div className="p-2">
+              {sessions.map((session) => (
+                <button
+                  key={session.id}
+                  onClick={() => handleSessionClick(session.id)}
+                  className={`
+                    w-full text-left p-3 rounded-lg mb-2 transition-colors
+                    ${session.id === currentSessionId 
+                      ? 'bg-gray-700 border border-gray-600' 
+                      : 'hover:bg-gray-800'
+                    }
+                  `}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1 min-w-0">
+                      <p className={`
+                        text-sm font-medium truncate
+                        ${session.id === currentSessionId ? 'text-white' : 'text-gray-200'}
+                      `}>
+                        {session.title}
+                      </p>
+                      <p className="text-xs text-gray-400 mt-1">
+                        {formatDate(session.updatedAt || session.createdAt)}
+                      </p>
+                    </div>
+                    {session.id === currentSessionId && (
+                      <div className="w-2 h-2 bg-white rounded-full ml-2 mt-2 flex-shrink-0" />
+                    )}
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Content Spacer for Desktop */}
+      <div className={`
+        hidden lg:block transition-all duration-300 ease-in-out
+        ${isOpen ? 'w-80' : 'w-0'}
+      `} />
+    </>
+  );
+}

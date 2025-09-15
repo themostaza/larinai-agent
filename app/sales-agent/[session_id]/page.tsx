@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useChat } from '@ai-sdk/react';
 import { useParams, useRouter } from 'next/navigation';
 import DatabaseQueryButton from '../../components/DatabaseQueryButton';
+import ChatSidebar from '../../components/ChatSidebar';
 import { v4 as uuidv4 } from 'uuid';
 
 interface MessagePart {
@@ -291,10 +292,21 @@ export default function ChatSessionPage() {
           scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
         }
       `}</style>
-      <div className="min-h-screen bg-black text-white flex flex-col relative">
-        {/* Messages Area - with bottom padding to avoid overlap with fixed input */}
-        <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 space-y-4 pb-32 sm:pb-40">
-          <div className="max-w-4xl mx-auto w-full">
+      <div className="min-h-screen bg-black text-white flex relative">
+        {/* Sidebar */}
+        <ChatSidebar 
+          currentSessionId={sessionId} 
+          onSessionSelect={(sessionId) => {
+            // Optional: handle session selection if needed
+            console.log('Selected session:', sessionId);
+          }}
+        />
+        
+        {/* Main Content */}
+        <div className="flex-1 flex flex-col min-h-screen">
+          {/* Messages Area - with bottom padding to avoid overlap with fixed input */}
+          <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 space-y-4 pb-32 sm:pb-40">
+            <div className="max-w-4xl mx-auto w-full">
             {messages.map((message) => (
               <div
                 key={message.id}
@@ -354,11 +366,11 @@ export default function ChatSessionPage() {
                 </div>
               </div>
             )}
+            </div>
           </div>
-        </div>
 
-        {/* Fixed Input Area */}
-        <div className="fixed bottom-0 left-0 right-0 bg-transparent sm:p-6 w-full">
+          {/* Fixed Input Area */}
+          <div className="fixed bottom-0 left-0 right-0 bg-transparent sm:p-6 w-full">
           <div className="max-w-4xl mx-auto w-full">
             <form onSubmit={handleSubmit} className="flex gap-3 items-end">
               <textarea
@@ -388,6 +400,7 @@ export default function ChatSessionPage() {
             <p className="text-xs text-gray-500 mt-2 text-center bg-gray-900 w-fit mx-auto rounded-xl px-4 py-2 border border-gray-700">
               verifica sempre le informazioni che ricevi dall&apos;agent
             </p>
+          </div>
           </div>
         </div>
       </div>
