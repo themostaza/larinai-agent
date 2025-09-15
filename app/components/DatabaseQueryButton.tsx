@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Database, X } from 'lucide-react';
+import { Database, X, ChevronDown, ChevronRight } from 'lucide-react';
 
 interface DatabaseQueryButtonProps {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -12,6 +12,7 @@ interface DatabaseQueryButtonProps {
 
 export default function DatabaseQueryButton({ part }: DatabaseQueryButtonProps) {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isQueryAccordionOpen, setIsQueryAccordionOpen] = useState(true);
 
   // I dati possono essere nella struttura dell'AI SDK (input/output) o nella vecchia struttura (args/result)
   const input = part.input || part.args || {};
@@ -78,7 +79,8 @@ export default function DatabaseQueryButton({ part }: DatabaseQueryButtonProps) 
 
       {/* Full-Screen Dialog */}
       {isDialogOpen && (
-        <div className="fixed inset-0 z-50 bg-black bg-opacity-95 flex flex-col">
+        <div className="fixed inset-0 z-50 bg-black bg-opacity-95 flex flex-col overflow-hidden">
+          <div className="flex flex-col h-full overflow-y-auto">
           {/* Header */}
           <div className="flex items-center justify-between p-6 border-b border-gray-700">
             <div className="flex items-center gap-3">
@@ -96,17 +98,31 @@ export default function DatabaseQueryButton({ part }: DatabaseQueryButtonProps) 
             </button>
           </div>
 
-          {/* Query Section */}
-          <div className="p-6 border-b border-gray-800">
-            <h3 className="text-lg font-medium text-white mb-3">Query Eseguita</h3>
-            <div className="bg-gray-900 p-4 rounded-lg border border-gray-700">
-              <pre className="text-gray-300 text-sm font-mono whitespace-pre-wrap overflow-x-auto">
-                {query}
-              </pre>
-            </div>
-            {purpose && (
-              <div className="mt-3 text-sm text-gray-400">
-                <strong>Scopo:</strong> {purpose}
+          {/* Query Section - Accordion */}
+          <div className="border-b border-gray-800">
+            <button
+              onClick={() => setIsQueryAccordionOpen(!isQueryAccordionOpen)}
+              className="w-full p-6 text-left hover:bg-gray-900/30 transition-colors flex items-center justify-between"
+            >
+              <h3 className="text-lg font-medium text-white">Query Eseguita</h3>
+              {isQueryAccordionOpen ? (
+                <ChevronDown className="w-5 h-5 text-gray-400" />
+              ) : (
+                <ChevronRight className="w-5 h-5 text-gray-400" />
+              )}
+            </button>
+            {isQueryAccordionOpen && (
+              <div className="px-6 pb-6">
+                <div className="bg-gray-900 p-4 rounded-lg border border-gray-700">
+                  <pre className="text-gray-300 text-sm font-mono whitespace-pre-wrap overflow-x-auto">
+                    {query}
+                  </pre>
+                </div>
+                {purpose && (
+                  <div className="mt-3 text-sm text-gray-400">
+                    <strong>Scopo:</strong> {purpose}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -162,6 +178,7 @@ export default function DatabaseQueryButton({ part }: DatabaseQueryButtonProps) 
                 <div className="text-gray-400">Nessun dato da visualizzare</div>
               </div>
             )}
+          </div>
           </div>
         </div>
       )}
