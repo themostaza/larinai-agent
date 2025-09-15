@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Technowrapp Agent Commerciale",
+  title: "Technowrapp Agent",
   description: "Agent intelligente che accede ai dati CRM, database e gestionali aziendali per supportare le attività commerciali",
 };
 
