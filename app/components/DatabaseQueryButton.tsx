@@ -4,23 +4,8 @@ import React, { useState } from 'react';
 import { Database, X } from 'lucide-react';
 
 interface DatabaseQueryButtonProps {
-  part: {
-    type: string;
-    args?: {
-      query?: string;
-      database?: string;
-      purpose?: string;
-    };
-    result?: {
-      success?: boolean;
-      error?: string;
-      rowCount?: number;
-      executionTime?: string;
-      truncated?: boolean;
-      results?: unknown[];
-      queryType?: string;
-    };
-  };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  part: any; // Use any to handle complex AI SDK types
   messageId: string;
   partIndex: number;
 }
@@ -28,10 +13,14 @@ interface DatabaseQueryButtonProps {
 export default function DatabaseQueryButton({ part }: DatabaseQueryButtonProps) {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
 
-  const query = part.args ? String(part.args.query || '') : '';
-  const database = part.args ? String(part.args.database || 'N/A') : 'N/A';
-  const purpose = part.args ? String(part.args.purpose || '') : '';
-  const result = part.result;
+  // I dati possono essere nella struttura dell'AI SDK (input/output) o nella vecchia struttura (args/result)
+  const input = part.input || part.args || {};
+  const output = part.output || part.result || {};
+  
+  const query = input.query || output.query || '';
+  const database = input.database || output.database || 'N/A';
+  const purpose = input.purpose || output.purpose || '';
+  const result = output;
 
   const formatTableData = () => {
     if (!result || !result.results) return null;

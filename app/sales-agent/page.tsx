@@ -109,9 +109,6 @@ export default function SalesAgentPage() {
                       {message.role === 'user' ? 'Tu ' : 'AI '}
                     </span>
                     {message.parts.map((part, i) => {
-                      // Debug: mostra il tipo di ogni part
-                      console.log('Part type:', part.type, 'Part data:', part);
-                      
                       switch (part.type) {
                         case 'text':
                           return <span key={`${message.id}-${i}`}>{part.text}</span>;
@@ -124,15 +121,12 @@ export default function SalesAgentPage() {
                               partIndex={i}
                             />
                           );
+                        case 'step-start':
+                        case 'reasoning':
+                          // Ignora questi tipi di part (sono interni all'AI)
+                          return null;
                         default:
-                          // Mostra anche i tipi non riconosciuti per debug
-                          console.log('Unknown part type:', part.type);
-                          return (
-                            <div key={`${message.id}-${i}`} className="bg-yellow-800 p-2 rounded text-xs">
-                              Debug: Unknown part type {part.type}
-                              <pre>{JSON.stringify(part, null, 2)}</pre>
-                            </div>
-                          );
+                          return null;
                       }
                     })}
                   </div>
