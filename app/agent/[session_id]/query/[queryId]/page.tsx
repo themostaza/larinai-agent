@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { Database, Download, Heart, Info, X, Check, AlertCircle, RefreshCw } from 'lucide-react';
+import { Database, Download, Heart, Info, X, Check, AlertCircle, RefreshCw, BrainCircuit } from 'lucide-react';
 
 interface QueryData {
   queryId: string;
@@ -311,6 +311,13 @@ export default function QueryPage() {
           </button>
           
           <div className="flex items-center gap-2">
+            <div className="relative group">
+              <Info className="w-5 h-5 text-gray-400 hover:text-gray-300 cursor-help" />
+              <div className="absolute right-0 top-8 bg-gray-800 text-white text-xs rounded-lg p-3 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-50 w-64">
+                Salvando la query tra le preferite sarà più facile ritrovarla in futuro per riutilizzarla
+              </div>
+            </div>
+            
             <button
               onClick={isQuerySaved ? undefined : openSaveDialog}
               disabled={isQuerySaved}
@@ -327,12 +334,16 @@ export default function QueryPage() {
               </span>
             </button>
             
-            <div className="relative group">
-              <Info className="w-5 h-5 text-gray-400 hover:text-gray-300 cursor-help" />
-              <div className="absolute right-0 top-8 bg-gray-800 text-white text-xs rounded-lg p-3 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-50 w-64">
-                Salvando la query tra le preferite sarà più facile ritrovarla in futuro per riutilizzarla
-              </div>
-            </div>
+            <button
+              onClick={() => {/* TODO: implementare logica agent */}}
+              className="group flex items-center p-2 bg-gray-800 text-gray-300 rounded-lg border border-gray-700 hover:bg-gray-700 hover:text-white transition-all duration-300 overflow-hidden"
+              title="Apri Agent AI"
+            >
+              <BrainCircuit size={16} className="flex-shrink-0" />
+              <span className="whitespace-nowrap text-sm font-medium opacity-0 group-hover:opacity-100 max-w-0 group-hover:max-w-xs group-hover:ml-2 transition-all duration-300">
+                Agent
+              </span>
+            </button>
           </div>
         </div>
         {isQueryAccordionOpen && (
@@ -383,8 +394,8 @@ export default function QueryPage() {
               </button>
             </div>
             
-            {/* Info e controlli per tab Dati */}
-            {activeTab === 'data' && result?.success !== false && (
+            {/* Info e controlli - visibili per entrambe le tab */}
+            {result?.success !== false && (
               <div className="flex items-center gap-3">
                 <div className="text-sm text-gray-400">
                   {String(result?.rowCount || 0)} record • {String(result?.executionTime || 'N/A')} • {
