@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { Database, Download, Heart, Info, X, Check, AlertCircle } from 'lucide-react';
+import { Database, Download, Heart, Info, X, Check, AlertCircle, RefreshCw } from 'lucide-react';
 
 interface QueryData {
   queryId: string;
@@ -302,9 +302,8 @@ export default function QueryPage() {
             className="flex items-center gap-3 flex-1"
           >
             <Database className="w-6 h-6 text-blue-400" />
-            <h1 className="text-lg font-medium text-white">Query Eseguita</h1>
             {purpose && (
-              <span className="text-sm text-gray-400">
+              <span className="text-lg font-medium text-white">
                 {String(purpose)}
               </span>
             )}
@@ -314,15 +313,17 @@ export default function QueryPage() {
             <button
               onClick={isQuerySaved ? undefined : openSaveDialog}
               disabled={isQuerySaved}
-              className={`flex items-center gap-2 px-3 py-1.5 border rounded-md text-sm transition-all duration-200 ${
+              className={`group flex items-center p-2 rounded-lg border text-sm transition-all duration-300 overflow-hidden ${
                 isQuerySaved
                   ? 'bg-gray-800/50 border-gray-500/50 text-gray-500 cursor-not-allowed'
                   : 'bg-gray-800 hover:bg-gray-700 border-gray-600 hover:border-gray-500 text-gray-300 hover:text-white'
               }`}
               title={isQuerySaved ? "Query già salvata tra i preferiti" : "Salva query tra i preferiti"}
             >
-              <Heart className={`w-4 h-4 ${isQuerySaved ? 'text-red-400' : ''}`} />
-              {isQuerySaved ? 'Query salvata' : 'Salva query'}
+              <Heart className={`w-4 h-4 flex-shrink-0 ${isQuerySaved ? 'text-red-400' : ''}`} />
+              <span className="whitespace-nowrap font-medium opacity-0 group-hover:opacity-100 max-w-0 group-hover:max-w-xs group-hover:ml-2 transition-all duration-300">
+                {isQuerySaved ? 'Query salvata' : 'Salva query'}
+              </span>
             </button>
             
             <div className="relative group">
@@ -335,6 +336,7 @@ export default function QueryPage() {
         </div>
         {isQueryAccordionOpen && (
           <div className="px-6 pb-6">
+            <h1 className="text-lg font-medium text-white mb-4">Query</h1>
             <div className="bg-gray-900 p-4 rounded-lg border border-gray-700">
               <pre className="text-gray-300 text-sm font-mono whitespace-pre-wrap overflow-x-auto">
                 {String(query)}
@@ -378,14 +380,29 @@ export default function QueryPage() {
                   )}
                 </div>
                 {tableData && (
-                  <button
-                    onClick={downloadCSV}
-                    className="flex items-center gap-2 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-600 hover:border-gray-500 rounded-md text-sm text-gray-300 hover:text-white transition-all duration-200"
-                    title="Scarica dati come CSV"
-                  >
-                    <Download className="w-4 h-4" />
-                    CSV
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={downloadCSV}
+                      className="group flex items-center p-2 bg-gray-800 text-gray-300 rounded-lg border border-gray-700 hover:bg-gray-700 hover:text-white transition-all duration-300 overflow-hidden"
+                      title="Scarica dati come CSV"
+                    >
+                      <Download size={16} className="flex-shrink-0" />
+                      <span className="whitespace-nowrap text-sm font-medium opacity-0 group-hover:opacity-100 max-w-0 group-hover:max-w-xs group-hover:ml-2 transition-all duration-300">
+                        Scarica CSV
+                      </span>
+                    </button>
+                    
+                    <button
+                      onClick={() => {/* TODO: implementare logica aggiornamento */}}
+                      className="group flex items-center p-2 bg-gray-800 text-gray-300 rounded-lg border border-gray-700 hover:bg-gray-700 hover:text-white transition-all duration-300 overflow-hidden"
+                      title="Aggiorna dati"
+                    >
+                      <RefreshCw size={16} className="flex-shrink-0" />
+                      <span className="whitespace-nowrap text-sm font-medium opacity-0 group-hover:opacity-100 max-w-0 group-hover:max-w-xs group-hover:ml-2 transition-all duration-300">
+                        Aggiorna
+                      </span>
+                    </button>
+                  </div>
                 )}
               </div>
             )}
