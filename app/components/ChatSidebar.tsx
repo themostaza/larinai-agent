@@ -170,19 +170,25 @@ export default function ChatSidebar({ currentSessionId, onSessionSelect, onSessi
           {/* Hamburger Button */}
           <button
             onClick={() => setIsOpen(true)}
-            className="p-2 bg-gray-800 text-white rounded-lg border border-gray-700 hover:bg-gray-700 transition-colors"
+            className="group flex items-center p-2 bg-gray-800 text-white rounded-lg border border-gray-700 hover:bg-gray-700 transition-all duration-300 overflow-hidden"
             aria-label="Apri sidebar"
           >
-            <Menu size={20} />
+            <Menu size={20} className="flex-shrink-0" />
+            <span className="whitespace-nowrap text-sm font-medium opacity-0 group-hover:opacity-100 max-w-0 group-hover:max-w-xs group-hover:ml-2 transition-all duration-300">
+              Menu
+            </span>
           </button>
           
           {/* Nuova Chat Button */}
           <button
             onClick={handleNewChat}
-            className="p-2 bg-gray-800 text-white rounded-lg border border-gray-700 hover:bg-gray-700 transition-colors"
+            className="group flex items-center p-2 bg-gray-800 text-white rounded-lg border border-gray-700 hover:bg-gray-700 transition-all duration-300 overflow-hidden"
             aria-label="Nuova chat"
           >
-            <Plus size={20} />
+            <Plus size={20} className="flex-shrink-0" />
+            <span className="whitespace-nowrap text-sm font-medium opacity-0 group-hover:opacity-100 max-w-0 group-hover:max-w-xs group-hover:ml-2 transition-all duration-300">
+              Nuova chat
+            </span>
           </button>
         </div>
       )}
