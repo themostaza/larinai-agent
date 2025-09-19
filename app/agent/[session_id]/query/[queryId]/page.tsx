@@ -46,6 +46,7 @@ export default function QueryPage() {
     message: string;
   } | null>(null);
   const [isQuerySaved, setIsQuerySaved] = useState(false);
+  const [activeTab, setActiveTab] = useState<'data' | 'charts'>('data');
 
   // Funzione per controllare se la query è già salvata
   const checkIfQuerySaved = async (messageDbId: string) => {
@@ -356,14 +357,37 @@ export default function QueryPage() {
       </div>
 
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Results Section */}
-        <div className="flex-1 px-6 py-3 flex flex-col overflow-hidden">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-medium text-white">Dati</h2>
-            {result?.success !== false && (
+        {/* Tabs Section */}
+        <div className="px-6 py-3">
+          <div className="flex items-center justify-between">
+            <div className="flex space-x-2">
+              <button
+                onClick={() => setActiveTab('data')}
+                className={`px-4 py-2 text-sm font-medium rounded-lg border transition-colors ${
+                  activeTab === 'data'
+                    ? 'bg-gray-800 border-gray-600 text-white'
+                    : 'bg-gray-800/50 border-gray-700 text-gray-400 hover:text-gray-300 hover:bg-gray-800 hover:border-gray-600'
+                }`}
+              >
+                Dati
+              </button>
+              <button
+                onClick={() => setActiveTab('charts')}
+                className={`px-4 py-2 text-sm font-medium rounded-lg border transition-colors ${
+                  activeTab === 'charts'
+                    ? 'bg-gray-800 border-gray-600 text-white'
+                    : 'bg-gray-800/50 border-gray-700 text-gray-400 hover:text-gray-300 hover:bg-gray-800 hover:border-gray-600'
+                }`}
+              >
+                Grafici e KPI
+              </button>
+            </div>
+            
+            {/* Info e controlli per tab Dati */}
+            {activeTab === 'data' && result?.success !== false && (
               <div className="flex items-center gap-3">
                 <div className="text-sm text-gray-400">
-                  {String(result?.rowCount || 0)} righe • {String(result?.executionTime || 'N/A')} • {
+                  {String(result?.rowCount || 0)} record • {String(result?.executionTime || 'N/A')} • {
                     queryData.message?.createdAt 
                       ? new Date(queryData.message.createdAt).toLocaleString('it-IT', {
                           year: 'numeric',
@@ -407,8 +431,13 @@ export default function QueryPage() {
               </div>
             )}
           </div>
+        </div>
 
-          {result?.success === false ? (
+        {/* Content Section */}
+        <div className="flex-1 px-6 flex flex-col overflow-hidden">
+          {activeTab === 'data' && (
+            <>
+              {result?.success === false ? (
             <div className="bg-red-900/20 border border-red-500/30 rounded-lg p-6 text-center">
               <div className="text-red-400 text-lg mb-2">❌ Errore nell&apos;esecuzione della query</div>
               <div className="text-red-300 text-sm">
@@ -445,6 +474,20 @@ export default function QueryPage() {
           ) : (
             <div className="bg-gray-900 rounded-lg border border-gray-700 p-6 text-center">
               <div className="text-gray-400">Nessun dato da visualizzare</div>
+            </div>
+          )}
+            </>
+          )}
+          
+          {activeTab === 'charts' && (
+            <div className="flex-1 flex items-center justify-center">
+              <div className="text-center">
+                <div className="text-6xl mb-4">📊</div>
+                <h3 className="text-xl font-medium text-white mb-2">Grafici e KPI</h3>
+                <p className="text-gray-400">
+                  Questa sezione conterrà visualizzazioni grafiche e indicatori KPI basati sui dati della query.
+                </p>
+              </div>
             </div>
           )}
         </div>
