@@ -110,6 +110,7 @@ export type Database = {
       query_saved: {
         Row: {
           body: Json | null
+          chart_kpi: Json | null
           chat_message_id: string | null
           created_at: string
           id: string
@@ -118,6 +119,7 @@ export type Database = {
         }
         Insert: {
           body?: Json | null
+          chart_kpi?: Json | null
           chat_message_id?: string | null
           created_at?: string
           id?: string
@@ -126,6 +128,7 @@ export type Database = {
         }
         Update: {
           body?: Json | null
+          chart_kpi?: Json | null
           chat_message_id?: string | null
           created_at?: string
           id?: string

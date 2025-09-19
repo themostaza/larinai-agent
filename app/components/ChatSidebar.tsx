@@ -95,7 +95,7 @@ export default function ChatSidebar({ currentSessionId, onSessionSelect, onSessi
   // Fetch chat sessions al mount
   useEffect(() => {
     fetchSessions();
-  }, []);
+  }, [fetchSessions]);
 
   // Funzione pubblica per forzare il refresh
   const refreshSessions = () => {
@@ -108,7 +108,7 @@ export default function ChatSidebar({ currentSessionId, onSessionSelect, onSessi
       // Refresh intelligente quando si apre la sidebar
       fetchSessions(false);
     }
-  }, [isOpen]);
+  }, [isOpen, fetchSessions, sessions.length]);
 
   // Esponi la funzione di refresh al window per permettere chiamate dalla pagina di chat
   useEffect(() => {
@@ -117,7 +117,7 @@ export default function ChatSidebar({ currentSessionId, onSessionSelect, onSessi
     return () => {
       delete (window as Window & { refreshChatSidebar?: () => void }).refreshChatSidebar;
     };
-  }, []);
+  }, [refreshSessions]);
 
   const handleNewChat = () => {
     const newSessionId = uuidv4();

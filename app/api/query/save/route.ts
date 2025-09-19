@@ -15,6 +15,11 @@ interface SaveQueryRequest {
   body: Record<string, unknown>;
 }
 
+interface UpdateChartKPIRequest {
+  chatMessageId: string;
+  chart_kpi: Record<string, unknown>;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body: SaveQueryRequest = await request.json();
@@ -107,7 +112,7 @@ export async function GET(request: NextRequest) {
     if (chatMessageId) {
       const { data, error } = await supabase
         .from('query_saved')
-        .select('id, title, created_at')
+        .select('id, title, created_at, chart_kpi')
         .eq('chat_message_id', chatMessageId);
 
       if (error) {
@@ -145,6 +150,86 @@ export async function GET(request: NextRequest) {
 
   } catch (error) {
     console.error('Error in get saved queries API:', error);
+    return NextResponse.json(
+      { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Errore interno del server' 
+      },
+      { status: 500 }
+    );
+  }
+}
+
+// PUT: Aggiorna il campo chart_kpi di una query salvata
+export async function PUT(request: NextRequest) {
+  try {
+    const body: UpdateChartKPIRequest = await request.json();
+    const { chatMessageId, chart_kpi } = body;
+
+    // Validazione input
+    if (!chatMessageId || !chart_kpi) {
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'Campi richiesti: chatMessageId, chart_kpi' 
+        },
+        { status: 400 }
+      );
+    }
+
+    console.log('Updating chart_kpi for message:', chatMessageId);
+
+    // Verifica che la query salvata esista
+    const { data: savedQuery } = await supabase
+      .from('query_saved')
+      .select('id')
+      .eq('chat_message_id', chatMessageId)
+      .single();
+
+    if (!savedQuery) {
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'Query salvata non trovata' 
+        },
+        { status: 404 }
+      );
+    }
+
+    // Aggiorna il campo chart_kpi
+    const { data, error } = await supabase
+      .from('query_saved')
+      .update({
+        chart_kpi: chart_kpi as never
+      })
+      .eq('chat_message_id', chatMessageId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error updating chart_kpi:', error);
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: `Errore nell'aggiornamento: ${error.message}` 
+        },
+        { status: 500 }
+      );
+    }
+
+    console.log('Chart KPI configuration updated successfully:', data.id);
+
+    return NextResponse.json({
+      success: true,
+      message: 'Configurazione grafici e KPI aggiornata con successo',
+      data: {
+        id: data.id,
+        chart_kpi: data.chart_kpi
+      }
+    });
+
+  } catch (error) {
+    console.error('Error in update chart_kpi API:', error);
     return NextResponse.json(
       { 
         success: false, 

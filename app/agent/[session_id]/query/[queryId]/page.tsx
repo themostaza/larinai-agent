@@ -1,8 +1,39 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useParams, useRouter } from 'next/navigation';
-import { Database, Download, Heart, Info, X, Check, AlertCircle, RefreshCw, BrainCircuit } from 'lucide-react';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { Database, Download, Heart, Info, X, Check, AlertCircle, RefreshCw, BrainCircuit, Code } from 'lucide-react';
+import AgentChatSidebar from '../../../../components/AgentChatSidebar';
+import DynamicChartsContainer from '../../../../components/charts/DynamicChartsContainer';
+
+// Definizione tipi per grafici e KPI
+interface KPIConfig {
+  id: string;
+  title: string;
+  type: 'number' | 'percentage' | 'currency';
+  query_field: string;
+  format?: string;
+  aggregation?: 'sum' | 'avg' | 'count' | 'min' | 'max';
+  icon?: string;
+}
+
+interface ChartConfig {
+  id: string;
+  title: string;
+  type: 'line' | 'bar' | 'pie' | 'doughnut';
+  data: {
+    x_field: string;
+    y_field: string;
+    group_by?: string;
+  };
+  options?: Record<string, unknown>;
+}
+
+interface ChartsKPIConfig {
+  version: string;
+  kpis?: KPIConfig[];
+  charts?: ChartConfig[];
+}
 
 interface QueryData {
   queryId: string;
@@ -32,6 +63,7 @@ interface QueryData {
 export default function QueryPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const sessionId = params.session_id as string;
   const queryId = params.queryId as string;
   
@@ -46,7 +78,16 @@ export default function QueryPage() {
     message: string;
   } | null>(null);
   const [isQuerySaved, setIsQuerySaved] = useState(false);
-  const [activeTab, setActiveTab] = useState<'data' | 'charts'>('data');
+  // Inizializza activeTab dal parametro URL o default a 'data'
+  const [activeTab, setActiveTab] = useState<'data' | 'charts' | 'python'>(() => {
+    const tabParam = searchParams.get('tab') as 'data' | 'charts' | 'python';
+    return ['data', 'charts', 'python'].includes(tabParam) ? tabParam : 'data';
+  });
+  const [isAgentSidebarOpen, setIsAgentSidebarOpen] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(25); // Default 25% of viewport width
+  const [chartsConfig, setChartsConfig] = useState<ChartsKPIConfig | null>(null); // Chart/KPI configuration from saved query
+  const [isRefreshing, setIsRefreshing] = useState(false); // Loading state for refresh
+  const [refreshedData, setRefreshedData] = useState<Record<string, unknown> | null>(null); // Refreshed data from API
 
   // Funzione per controllare se la query è già salvata
   const checkIfQuerySaved = async (messageDbId: string) => {
@@ -56,8 +97,22 @@ export default function QueryPage() {
       
       if (result.success && result.data && result.data.length > 0) {
         setIsQuerySaved(true);
+        // Load charts configuration if available
+        const savedQuery = result.data[0];
+        if (savedQuery.chart_kpi) {
+          try {
+            const config = typeof savedQuery.chart_kpi === 'string' 
+              ? JSON.parse(savedQuery.chart_kpi) 
+              : savedQuery.chart_kpi;
+            setChartsConfig(config);
+          } catch (error) {
+            console.error('Error parsing charts config:', error);
+            setChartsConfig(null);
+          }
+        }
       } else {
         setIsQuerySaved(false);
+        setChartsConfig(null);
       }
     } catch (error) {
       console.error('Error checking if query is saved:', error);
@@ -103,14 +158,76 @@ export default function QueryPage() {
     }
   }, [notification]);
 
+  // Funzione per cambiare tab e aggiornare URL
+  const handleTabChange = (newTab: 'data' | 'charts' | 'python') => {
+    setActiveTab(newTab);
+    const url = new URL(window.location.href);
+    url.searchParams.set('tab', newTab);
+    router.replace(url.pathname + url.search, { scroll: false });
+  };
+
+  // Funzione per aggiornare i dati della query
+  const refreshQueryData = async () => {
+    if (!queryData?.message?.dbId || !isQuerySaved) {
+      setNotification({
+        type: 'error',
+        message: 'Impossibile aggiornare: query non salvata'
+      });
+      return;
+    }
+
+    setIsRefreshing(true);
+    try {
+      const response = await fetch('/api/query/refresh', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          chatMessageId: queryData.message.dbId
+        })
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        setRefreshedData(result.data);
+        setNotification({
+          type: 'success',
+          message: 'Dati aggiornati con successo!'
+        });
+      } else {
+        setNotification({
+          type: 'error',
+          message: 'Errore nell\'aggiornamento: ' + (result.error || 'Errore sconosciuto')
+        });
+      }
+    } catch (error) {
+      console.error('Error refreshing data:', error);
+      setNotification({
+        type: 'error',
+        message: 'Errore nell\'aggiornamento dei dati'
+      });
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
   const formatTableData = () => {
-    if (!queryData?.part) return null;
+    // Usa i dati refreshed se disponibili, altrimenti usa i dati originali
+    let data;
     
-    const output = queryData.part.output || queryData.part.result || {};
-    if (!output || !output.results) return null;
+    if (refreshedData?.results) {
+      data = refreshedData.results;
+    } else if (queryData?.part) {
+      const output = queryData.part.output || queryData.part.result || {};
+      if (!output || !output.results) return null;
+      data = output.results;
+    } else {
+      return null;
+    }
     
     try {
-      const data = output.results;
       if (Array.isArray(data) && data.length > 0 && data[0] && typeof data[0] === 'object') {
         const headers = Object.keys(data[0] as Record<string, unknown>);
         return { headers, rows: data };
@@ -264,7 +381,7 @@ export default function QueryPage() {
   };
 
   return (
-    <div className="h-screen bg-black text-white flex flex-col overflow-hidden">
+    <div className="h-screen bg-black text-white flex overflow-hidden">
       <style jsx>{`
         .custom-scrollbar {
           scrollbar-width: auto;
@@ -295,8 +412,16 @@ export default function QueryPage() {
           background: #374151;
         }
       `}</style>
-      {/* Header con fisarmonica */}
-      <div className="border-b border-gray-700">
+      
+      {/* Main Content */}
+      <div 
+        className="flex-1 flex flex-col overflow-hidden transition-all duration-300"
+        style={{
+          marginRight: isAgentSidebarOpen ? `${sidebarWidth}vw` : '0'
+        }}
+      >
+        {/* Header con fisarmonica */}
+        <div className="border-b border-gray-700">
         <div className="flex items-center justify-between px-6 py-3 hover:bg-gray-900/30 transition-colors">
           <button
             onClick={() => setIsQueryAccordionOpen(!isQueryAccordionOpen)}
@@ -335,9 +460,13 @@ export default function QueryPage() {
             </button>
             
             <button
-              onClick={() => {/* TODO: implementare logica agent */}}
-              className="group flex items-center p-2 bg-gray-800 text-gray-300 rounded-lg border border-gray-700 hover:bg-gray-700 hover:text-white transition-all duration-300 overflow-hidden"
-              title="Apri Agent AI"
+              onClick={() => setIsAgentSidebarOpen(!isAgentSidebarOpen)}
+              className={`group flex items-center p-2 rounded-lg border transition-all duration-300 overflow-hidden ${
+                isAgentSidebarOpen
+                  ? 'bg-white text-black border-gray-300 hover:bg-gray-100'
+                  : 'bg-gray-800 text-gray-300 border-gray-700 hover:bg-gray-700 hover:text-white'
+              }`}
+              title={isAgentSidebarOpen ? "Chiudi Agent AI" : "Apri Agent AI"}
             >
               <BrainCircuit size={16} className="flex-shrink-0" />
               <span className="whitespace-nowrap text-sm font-medium opacity-0 group-hover:opacity-100 max-w-0 group-hover:max-w-xs group-hover:ml-2 transition-all duration-300">
@@ -373,7 +502,7 @@ export default function QueryPage() {
           <div className="flex items-center justify-between">
             <div className="flex space-x-2">
               <button
-                onClick={() => setActiveTab('data')}
+                onClick={() => handleTabChange('data')}
                 className={`px-4 py-2 text-sm font-medium rounded-lg border transition-colors ${
                   activeTab === 'data'
                     ? 'bg-gray-800 border-gray-600 text-white'
@@ -383,7 +512,7 @@ export default function QueryPage() {
                 Dati
               </button>
               <button
-                onClick={() => setActiveTab('charts')}
+                onClick={() => handleTabChange('charts')}
                 className={`px-4 py-2 text-sm font-medium rounded-lg border transition-colors ${
                   activeTab === 'charts'
                     ? 'bg-gray-800 border-gray-600 text-white'
@@ -392,25 +521,44 @@ export default function QueryPage() {
               >
                 Grafici e KPI
               </button>
+              <button
+                onClick={() => handleTabChange('python')}
+                className={`px-4 py-2 text-sm font-medium rounded-lg border transition-colors ${
+                  activeTab === 'python'
+                    ? 'bg-gray-800 border-gray-600 text-white'
+                    : 'bg-gray-800/50 border-gray-700 text-gray-400 hover:text-gray-300 hover:bg-gray-800 hover:border-gray-600'
+                }`}
+              >
+                Analisi Dati con Python
+              </button>
             </div>
             
             {/* Info e controlli - visibili per entrambe le tab */}
             {result?.success !== false && (
               <div className="flex items-center gap-3">
                 <div className="text-sm text-gray-400">
-                  {String(result?.rowCount || 0)} record • {String(result?.executionTime || 'N/A')} • {
-                    queryData.message?.createdAt 
-                      ? new Date(queryData.message.createdAt).toLocaleString('it-IT', {
+                  {String(refreshedData?.rowCount || result?.rowCount || 0)} record • {String(refreshedData?.executionTime || result?.executionTime || 'N/A')} • {
+                    refreshedData?.refreshedAt 
+                      ? new Date(String(refreshedData.refreshedAt)).toLocaleString('it-IT', {
                           year: 'numeric',
                           month: '2-digit',
                           day: '2-digit',
                           hour: '2-digit',
                           minute: '2-digit',
                           second: '2-digit'
-                        })
-                      : 'N/A'
+                        }) + ' (aggiornato)'
+                      : queryData.message?.createdAt 
+                        ? new Date(String(queryData.message.createdAt)).toLocaleString('it-IT', {
+                            year: 'numeric',
+                            month: '2-digit',
+                            day: '2-digit',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            second: '2-digit'
+                          })
+                        : 'N/A'
                   }
-                  {Boolean(result?.truncated) && (
+                  {Boolean(refreshedData?.truncated || result?.truncated) && (
                     <span className="text-yellow-400 ml-2">⚠️ Troncato</span>
                   )}
                 </div>
@@ -428,13 +576,14 @@ export default function QueryPage() {
                     </button>
                     
                     <button
-                      onClick={() => {/* TODO: implementare logica aggiornamento */}}
-                      className="group flex items-center p-2 bg-gray-800 text-gray-300 rounded-lg border border-gray-700 hover:bg-gray-700 hover:text-white transition-all duration-300 overflow-hidden"
-                      title="Aggiorna dati"
+                      onClick={refreshQueryData}
+                      disabled={isRefreshing || !isQuerySaved}
+                      className="group flex items-center p-2 bg-gray-800 text-gray-300 rounded-lg border border-gray-700 hover:bg-gray-700 hover:text-white disabled:bg-gray-600 disabled:text-gray-500 disabled:cursor-not-allowed transition-all duration-300 overflow-hidden"
+                      title={isQuerySaved ? "Aggiorna dati" : "Salva la query per abilitare l'aggiornamento"}
                     >
-                      <RefreshCw size={16} className="flex-shrink-0" />
+                      <RefreshCw size={16} className={`flex-shrink-0 ${isRefreshing ? 'animate-spin' : ''}`} />
                       <span className="whitespace-nowrap text-sm font-medium opacity-0 group-hover:opacity-100 max-w-0 group-hover:max-w-xs group-hover:ml-2 transition-all duration-300">
-                        Aggiorna
+                        {isRefreshing ? 'Aggiornamento...' : 'Aggiorna'}
                       </span>
                     </button>
                   </div>
@@ -491,17 +640,57 @@ export default function QueryPage() {
           )}
           
           {activeTab === 'charts' && (
+            <DynamicChartsContainer
+              config={chartsConfig}
+              data={tableData?.rows || []}
+              onOpenAgentChat={() => setIsAgentSidebarOpen(true)}
+            />
+          )}
+          
+          {activeTab === 'python' && (
             <div className="flex-1 flex items-center justify-center">
-              <div className="text-center">
-                <div className="text-6xl mb-4">📊</div>
-                <h3 className="text-xl font-medium text-white mb-2">Grafici e KPI</h3>
-                <p className="text-gray-400">
-                  Questa sezione conterrà visualizzazioni grafiche e indicatori KPI basati sui dati della query.
+              <div className="bg-gray-900 rounded-lg border border-gray-700 p-8 text-center" style={{ width: '50vw' }}>
+                <div className="flex items-center justify-center mb-4">
+                  <Code className="w-8 h-8 text-gray-400 mr-3" />
+                  <h3 className="text-xl font-semibold text-gray-300">Analisi Dati con Python</h3>
+                </div>
+                <div className="flex items-center justify-center gap-2 mb-4">
+                  <div className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse"></div>
+                  <span className="text-yellow-300 text-sm font-medium">In sviluppo</span>
+                </div>
+                <p className="text-gray-400 text-base leading-relaxed">
+                  Stiamo lavorando all&apos;implementazione di questa funzionalità e sarà presto disponibile in beta.
                 </p>
               </div>
             </div>
           )}
         </div>
+      </div>
+      </div>
+
+      {/* Agent Chat Sidebar */}
+      <div 
+        className={`fixed top-0 right-0 h-full transform transition-all duration-300 z-40 ${
+          isAgentSidebarOpen ? 'translate-x-0' : 'translate-x-full'
+        }`}
+        style={{
+          width: `${sidebarWidth}vw`
+        }}
+      >
+        <AgentChatSidebar
+          isOpen={isAgentSidebarOpen}
+          onClose={() => setIsAgentSidebarOpen(false)}
+          width={sidebarWidth}
+          onWidthChange={setSidebarWidth}
+          queryContext={{
+            query: String(query),
+            database: String(database),
+            purpose: String(purpose),
+            sessionId,
+            queryId,
+            chatMessageId: queryData?.message?.dbId || queryData?.message?.id
+          }}
+        />
       </div>
 
       {/* Dialog per salvare query */}
