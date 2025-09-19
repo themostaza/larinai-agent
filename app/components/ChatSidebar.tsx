@@ -10,68 +10,118 @@ interface ChatSession {
   createdAt: string | null;
   updatedAt: string | null;
   metadata?: Record<string, unknown> | null;
+  _justUpdated?: boolean; // Flag temporaneo per evidenziare aggiornamenti
 }
 
 interface ChatSidebarProps {
   currentSessionId: string;
   onSessionSelect?: (sessionId: string) => void;
+  onSessionsUpdate?: (sessions: ChatSession[]) => void;
 }
 
-export default function ChatSidebar({ currentSessionId, onSessionSelect }: ChatSidebarProps) {
+export default function ChatSidebar({ currentSessionId, onSessionSelect, onSessionsUpdate }: ChatSidebarProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Responsive behavior: open by default on desktop, closed on mobile
+  // Sidebar collassata di default su tutte le dimensioni
   useEffect(() => {
-    const handleResize = () => {
-      if (window.innerWidth >= 1024) { // lg breakpoint
-        setIsOpen(true);
-      } else {
-        setIsOpen(false);
-      }
-    };
-
-    // Set initial state
-    handleResize();
-
-    // Add event listener
-    window.addEventListener('resize', handleResize);
-
-    // Cleanup
-    return () => window.removeEventListener('resize', handleResize);
+    setIsOpen(false);
   }, []);
 
-  // Fetch chat sessions
-  useEffect(() => {
-    const fetchSessions = async () => {
-      try {
+  // Funzione per caricare le sessioni con aggiornamento intelligente
+  const fetchSessions = async (forceRefresh = false) => {
+    try {
+      // Solo mostra loading se è il primo caricamento o refresh forzato
+      if (sessions.length === 0 || forceRefresh) {
         setIsLoading(true);
-        setError(null);
-
-        const response = await fetch('/api/chat/sessions');
-        const result = await response.json();
-
-        if (!result.success) {
-          throw new Error(result.error || 'Failed to fetch sessions');
-        }
-
-        setSessions(result.sessions || []);
-      } catch (err) {
-        console.error('Error fetching chat sessions:', err);
-        setError(err instanceof Error ? err.message : 'Failed to load chat sessions');
-      } finally {
-        setIsLoading(false);
       }
-    };
+      setError(null);
 
+      const response = await fetch('/api/chat/sessions');
+      const result = await response.json();
+
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to fetch sessions');
+      }
+
+      const newSessions = result.sessions || [];
+      
+      // Aggiornamento intelligente: confronta solo i titoli e updated_at
+      if (sessions.length > 0 && !forceRefresh) {
+        const updatedSessions = sessions.map(existingSession => {
+          const updatedSession = newSessions.find((ns: ChatSession) => ns.id === existingSession.id);
+          if (updatedSession && 
+              (updatedSession.title !== existingSession.title || 
+               updatedSession.updatedAt !== existingSession.updatedAt)) {
+            // Aggiungi flag temporaneo per evidenziare l'aggiornamento
+            return { ...updatedSession, _justUpdated: true };
+          }
+          return existingSession;
+        });
+        
+        // Aggiungi nuove sessioni se ce ne sono
+        const newSessionsToAdd = newSessions.filter((ns: ChatSession) => 
+          !sessions.some(es => es.id === ns.id)
+        );
+        
+        const finalSessions = [...updatedSessions, ...newSessionsToAdd];
+        setSessions(finalSessions);
+        
+        // Rimuovi il flag _justUpdated dopo un breve delay
+        setTimeout(() => {
+          setSessions(prev => prev.map(s => ({ ...s, _justUpdated: false })));
+        }, 2000);
+        
+      } else {
+        // Primo caricamento o refresh completo
+        setSessions(newSessions);
+      }
+      
+      // Notifica il parent component se fornito
+      onSessionsUpdate?.(newSessions);
+      
+      return newSessions;
+    } catch (err) {
+      console.error('Error fetching chat sessions:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load chat sessions');
+      return [];
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Fetch chat sessions al mount
+  useEffect(() => {
     fetchSessions();
+  }, []);
+
+  // Funzione pubblica per forzare il refresh
+  const refreshSessions = () => {
+    fetchSessions(true); // Force refresh completo
+  };
+
+  // Refresh automatico quando si apre la sidebar
+  useEffect(() => {
+    if (isOpen && sessions.length > 0) {
+      // Refresh intelligente quando si apre la sidebar
+      fetchSessions(false);
+    }
+  }, [isOpen]);
+
+  // Esponi la funzione di refresh al window per permettere chiamate dalla pagina di chat
+  useEffect(() => {
+    (window as Window & { refreshChatSidebar?: () => void }).refreshChatSidebar = refreshSessions;
+    
+    return () => {
+      delete (window as Window & { refreshChatSidebar?: () => void }).refreshChatSidebar;
+    };
   }, []);
 
   const handleNewChat = () => {
     const newSessionId = uuidv4();
-    const newTab = window.open(`/sales-agent/${newSessionId}`, '_blank');
+    const newTab = window.open(`/agent/${newSessionId}`, '_blank');
     if (newTab) {
       newTab.focus();
     }
@@ -79,7 +129,7 @@ export default function ChatSidebar({ currentSessionId, onSessionSelect }: ChatS
 
   const handleSessionClick = (sessionId: string) => {
     if (sessionId !== currentSessionId) {
-      const newTab = window.open(`/sales-agent/${sessionId}`, '_blank');
+      const newTab = window.open(`/agent/${sessionId}`, '_blank');
       if (newTab) {
         newTab.focus();
       }
@@ -114,15 +164,28 @@ export default function ChatSidebar({ currentSessionId, onSessionSelect }: ChatS
 
   return (
     <>
-      {/* Hamburger Button - Mobile and Desktop */}
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="fixed top-4 left-4 z-50 p-2 bg-gray-800 text-white rounded-lg border border-gray-700 hover:bg-gray-700 transition-colors"
-        aria-label="Toggle sidebar"
-        style={{ display: isOpen ? 'none' : 'block' }}
-      >
-        <Menu size={20} />
-      </button>
+      {/* Barra dei controlli quando sidebar è collassata */}
+      {!isOpen && (
+        <div className="fixed top-4 left-4 z-50 flex gap-2">
+          {/* Hamburger Button */}
+          <button
+            onClick={() => setIsOpen(true)}
+            className="p-2 bg-gray-800 text-white rounded-lg border border-gray-700 hover:bg-gray-700 transition-colors"
+            aria-label="Apri sidebar"
+          >
+            <Menu size={20} />
+          </button>
+          
+          {/* Nuova Chat Button */}
+          <button
+            onClick={handleNewChat}
+            className="p-2 bg-gray-800 text-white rounded-lg border border-gray-700 hover:bg-gray-700 transition-colors"
+            aria-label="Nuova chat"
+          >
+            <Plus size={20} />
+          </button>
+        </div>
+      )}
 
       {/* Overlay for mobile */}
       {isOpen && (
@@ -220,11 +283,6 @@ export default function ChatSidebar({ currentSessionId, onSessionSelect }: ChatS
         </div>
       </div>
 
-      {/* Content Spacer for Desktop */}
-      <div className={`
-        hidden lg:block transition-all duration-300 ease-in-out
-        ${isOpen ? 'w-80' : 'w-0'}
-      `} />
     </>
   );
 }

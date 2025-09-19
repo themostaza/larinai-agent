@@ -120,15 +120,31 @@ async function executeSQLServer(query: string, database?: string): Promise<unkno
   }
 }
 
-// Funzione per eseguire query PostgreSQL (mantenuta per compatibilità)
-async function executePostgreSQL(query: string, database?: string): Promise<unknown[]> {
-  const client = new PgClient({
+// Funzione per ottenere la configurazione PostgreSQL
+function getPostgreSQLConfig(database?: string) {
+  // Se esiste DATABASE_URL, usala (tipico di Heroku)
+  if (process.env.DATABASE_URL) {
+    return {
+      connectionString: process.env.DATABASE_URL,
+      ssl: { rejectUnauthorized: false } // Heroku richiede sempre SSL
+    };
+  }
+  
+  // Altrimenti usa le variabili separate
+  return {
     host: process.env.DB_SERVER,
     port: parseInt(process.env.DB_PORT || '5432'),
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD,
     database: database || process.env.DB_DATABASE,
-  });
+    ssl: { rejectUnauthorized: false } // Heroku richiede sempre SSL
+  };
+}
+
+// Funzione per eseguire query PostgreSQL
+async function executePostgreSQL(query: string, database?: string): Promise<unknown[]> {
+  const config = getPostgreSQLConfig(database);
+  const client = new PgClient(config);
 
   try {
     await client.connect();
@@ -158,15 +174,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log('=== QUERY SQL REQUEST ===');
-    console.log('Database:', database || DB_CONFIG.database);
-    console.log('Purpose:', purpose);
-    console.log('Query:', query);
+    // console.log('=== QUERY SQL REQUEST ===');
+    // console.log('Database:', database || DB_CONFIG.database);
+    // console.log('Purpose:', purpose);
+    // console.log('Query:', query);
 
     // Validazione della query
     const validation = validateSQLQuery(query);
     if (!validation.isValid) {
-      console.log('Validation error:', validation.error);
+      //console.log('Validation error:', validation.error);
       return NextResponse.json(
         { 
           success: false, 
@@ -195,8 +211,8 @@ export async function POST(request: NextRequest) {
     const executionTime = Date.now() - executionStart;
     const totalTime = Date.now() - startTime;
 
-    console.log(`Query executed successfully in ${executionTime}ms`);
-    console.log(`Results count: ${Array.isArray(results) ? results.length : 'N/A'}`);
+    // console.log(`Query executed successfully in ${executionTime}ms`);
+    // console.log(`Results count: ${Array.isArray(results) ? results.length : 'N/A'}`);
 
     // Limita i risultati per evitare risposte troppo grandi
     const maxResults = 1000;
@@ -239,25 +255,30 @@ export async function POST(request: NextRequest) {
 // Endpoint per testare la connessione
 export async function GET() {
   try {
-    console.log('Testing database connection...');
-    console.log('DB Config:', {
-      server: DB_CONFIG.server,
-      port: DB_CONFIG.port,
-      user: DB_CONFIG.user,
-      database: DB_CONFIG.database,
-      type: process.env.DB_TYPE || 'mssql'
-    });
-
+    // console.log('Testing database connection...');
+    
     const dbType = process.env.DB_TYPE || 'mssql';
     
     if (dbType === 'postgresql') {
-      const client = new PgClient({
-        host: process.env.DB_SERVER,
-        port: parseInt(process.env.DB_PORT || '5432'),
-        user: process.env.DB_USER,
-        password: process.env.DB_PASSWORD,
-        database: process.env.DB_DATABASE,
+      console.log('PostgreSQL Config:', {
+        usingDatabaseUrl: !!process.env.DATABASE_URL,
+        server: process.env.DATABASE_URL ? 'from DATABASE_URL' : process.env.DB_SERVER,
+        database: process.env.DATABASE_URL ? 'from DATABASE_URL' : process.env.DB_DATABASE,
+        type: dbType
       });
+    } else {
+      console.log('SQL Server Config:', {
+        server: DB_CONFIG.server,
+        port: DB_CONFIG.port,
+        user: DB_CONFIG.user,
+        database: DB_CONFIG.database,
+        type: dbType
+      });
+    }
+    
+    if (dbType === 'postgresql') {
+      const config = getPostgreSQLConfig();
+      const client = new PgClient(config);
 
       await client.connect();
       await client.query('SELECT 1');
@@ -268,29 +289,49 @@ export async function GET() {
       await connection.request().query('SELECT 1 as test');
     }
 
+    const responseConfig = dbType === 'postgresql' 
+      ? {
+          type: dbType,
+          usingDatabaseUrl: !!process.env.DATABASE_URL,
+          server: process.env.DATABASE_URL ? 'from DATABASE_URL' : process.env.DB_SERVER,
+          database: process.env.DATABASE_URL ? 'from DATABASE_URL' : process.env.DB_DATABASE
+        }
+      : {
+          type: dbType,
+          server: DB_CONFIG.server,
+          port: DB_CONFIG.port,
+          database: DB_CONFIG.database
+        };
+
     return NextResponse.json({ 
       success: true, 
       message: 'Connessione al database riuscita',
-      config: {
-        server: DB_CONFIG.server,
-        port: DB_CONFIG.port,
-        database: DB_CONFIG.database,
-        type: dbType
-      }
+      config: responseConfig
     });
 
   } catch (error) {
     console.error('Database connection test failed:', error);
+    
+    const dbType = process.env.DB_TYPE || 'mssql';
+    const errorConfig = dbType === 'postgresql' 
+      ? {
+          type: dbType,
+          usingDatabaseUrl: !!process.env.DATABASE_URL,
+          server: process.env.DATABASE_URL ? 'from DATABASE_URL' : process.env.DB_SERVER,
+          database: process.env.DATABASE_URL ? 'from DATABASE_URL' : process.env.DB_DATABASE
+        }
+      : {
+          type: dbType,
+          server: DB_CONFIG.server,
+          port: DB_CONFIG.port,
+          database: DB_CONFIG.database
+        };
+    
     return NextResponse.json(
       { 
         success: false, 
         error: error instanceof Error ? error.message : 'Errore di connessione al database',
-        config: {
-          server: DB_CONFIG.server,
-          port: DB_CONFIG.port,
-          database: DB_CONFIG.database,
-          type: process.env.DB_TYPE || 'mssql'
-        }
+        config: errorConfig
       },
       { status: 500 }
     );

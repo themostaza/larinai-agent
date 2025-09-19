@@ -8,21 +8,21 @@ export default function Home() {
         <div className="text-center max-w-4xl mx-auto">
           {/* Main Title */}
           <h1 className="text-4xl sm:text-5xl lg:text-6xl xl:text-7xl font-bold tracking-tight mb-6 sm:mb-8 text-white">
-            Technowrapp
+            LarinAI
             <br />
-            <span className="text-gray-400">Agent Commerciale</span>
+            <span className="text-gray-400">Agent</span>
           </h1>
 
           {/* Subtitle */}
           <p className="text-lg sm:text-xl lg:text-2xl text-gray-300 mb-12 sm:mb-16 leading-relaxed max-w-3xl mx-auto">
-            L&apos;agent intelligente accede ai dati del cliente presenti in CRM, database e gestionali aziendali: 
+            L&apos;agent intelligente accede al database, alla RAG, alle API e alle connessioni aziendali: 
             <span className="text-white font-medium"> dialoga con l&apos;agent per esplorare e analizzare i tuoi dati</span>
           </p>
 
           {/* CTA Button */}
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-20 sm:mb-24">
             <Link 
-              href="/sales-agent/new"
+              href="/agent/new"
               className="inline-flex items-center justify-center px-12 py-4 text-lg font-semibold text-black bg-white rounded-lg hover:bg-gray-100 transition-all duration-200 min-w-[280px] sm:min-w-[320px]"
             >
               Dialoga con l&apos;Agent

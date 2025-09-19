@@ -107,6 +107,41 @@ export type Database = {
         }
         Relationships: []
       }
+      query_saved: {
+        Row: {
+          body: Json | null
+          chat_message_id: string | null
+          created_at: string
+          id: string
+          query: string | null
+          title: string | null
+        }
+        Insert: {
+          body?: Json | null
+          chat_message_id?: string | null
+          created_at?: string
+          id?: string
+          query?: string | null
+          title?: string | null
+        }
+        Update: {
+          body?: Json | null
+          chat_message_id?: string | null
+          created_at?: string
+          id?: string
+          query?: string | null
+          title?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "query_saved_chat_message_id_fkey"
+            columns: ["chat_message_id"]
+            isOneToOne: false
+            referencedRelation: "chat_messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tool_executions: {
         Row: {
           created_at: string | null
@@ -156,10 +191,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      manual_cleanup_empty_sessions: {
-        Args: { user_uuid?: string }
-        Returns: number
-      }
+      [_ in never]: never
     }
     Enums: {
       [_ in never]: never

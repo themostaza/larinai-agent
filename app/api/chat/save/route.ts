@@ -43,27 +43,50 @@ interface SaveMessagesRequest {
 function isMessageStreaming(message: SaveMessageRequest['message']): boolean {
   if (!message.parts || !Array.isArray(message.parts)) return false;
   
-  return message.parts.some((part: MessagePart) => 
-    part.state === 'streaming' || 
-    part.state === 'input-streaming' ||
-    part.state === 'output-streaming' ||
-    (part.type === 'text' && part.text === '' && part.state === 'streaming') ||
-    // Tool calls in streaming
-    (part.type?.startsWith('tool-') && (part.state === 'input-streaming' || part.state === 'output-streaming'))
-  );
+  return message.parts.some((part: MessagePart) => {
+    // Per i tool calls, controlla se hanno input ma non output (ancora in esecuzione)
+    if (part.type?.startsWith('tool-')) {
+      // Se ha input ma non output/result, è ancora in esecuzione
+      const hasInput = !!(part.input || part.args);
+      const hasOutput = !!(part.output || part.result);
+      
+      // Se ha input ma non output, è ancora in streaming
+      if (hasInput && !hasOutput) {
+        return true;
+      }
+      
+      // Se ha stati di streaming espliciti
+      return part.state === 'input-streaming' || part.state === 'output-streaming';
+    }
+    
+    // Per i messaggi di testo
+    return part.state === 'streaming' || 
+           (part.type === 'text' && part.text === '' && part.state === 'streaming');
+  });
 }
 
 // Funzione per verificare se un messaggio ha contenuto utile
 function hasUsefulContent(message: SaveMessageRequest['message']): boolean {
   if (!message.parts || !Array.isArray(message.parts)) return false;
   
-  return message.parts.some((part: MessagePart) => 
-    (part.type === 'text' && part.text && part.text.trim().length > 0) ||
-    part.type?.startsWith('tool-') ||
-    part.type === 'step-start' ||
-    part.type === 'step-finish' ||
-    part.type === 'reasoning'
-  );
+  return message.parts.some((part: MessagePart) => {
+    // Testo non vuoto
+    if (part.type === 'text' && part.text && part.text.trim().length > 0) {
+      return true;
+    }
+    
+    // Tool calls completati (hanno sia input che output)
+    if (part.type?.startsWith('tool-')) {
+      const hasInput = !!(part.input || part.args);
+      const hasOutput = !!(part.output || part.result);
+      return hasInput && hasOutput; // Solo tool calls completati
+    }
+    
+    // Altri tipi di contenuto utile
+    return part.type === 'step-start' || 
+           part.type === 'step-finish' || 
+           part.type === 'reasoning';
+  });
 }
 
 // Funzione per creare una sessione se non esiste
@@ -85,104 +108,6 @@ async function ensureSessionExists(sessionId: string) {
 
     if (error && error.code !== '23505') { // Ignora errore di duplicato
       throw new Error(`Failed to create session: ${error.message}`);
-    }
-  }
-}
-
-// Funzione per estrarre e salvare tutti i tool calls da un messaggio
-async function saveToolExecutions(messageId: string, message: SaveMessageRequest['message']) {
-  if (!message.parts || !Array.isArray(message.parts)) return;
-
-  console.log(`Processing tool executions for message ${messageId}`);
-  
-  for (let partIndex = 0; partIndex < message.parts.length; partIndex++) {
-    const part = message.parts[partIndex];
-    
-    try {
-      // Gestisci tool calls di tipo read_sql_db
-      if (part.type === 'tool-read_sql_db') {
-        console.log(`Found SQL tool call at index ${partIndex}:`, {
-          toolCallId: part.toolCallId,
-          state: part.state,
-          hasInput: !!part.input,
-          hasOutput: !!part.output
-        });
-        
-        // Salva solo se il tool call è completato (ha output)
-        if (part.output || part.result) {
-          const toolExecution = {
-            message_id: messageId,
-            tool_name: 'read_sql_db',
-            input_data: (part.input || part.args || {}) as never,
-            output_data: (part.output || part.result || null) as never,
-            execution_time_ms: part.output?.executionTime ? 
-              parseInt(String(part.output.executionTime).replace('ms', '') || '0') : null,
-            success: part.output ? (part.output.success !== false) : null,
-            error_message: part.output?.error ? String(part.output.error) : null
-          };
-
-          // Verifica se esiste già questo tool execution
-          const { data: existing } = await supabase
-            .from('tool_executions')
-            .select('id')
-            .eq('message_id', messageId)
-            .eq('tool_name', 'read_sql_db')
-            .eq('input_data', toolExecution.input_data as never)
-            .single();
-
-          if (!existing) {
-            const { error } = await supabase
-              .from('tool_executions')
-              .insert(toolExecution);
-
-            if (error) {
-              console.error(`Error saving tool execution for message ${messageId}:`, error);
-            } else {
-              console.log(`Saved SQL tool execution for message ${messageId}`);
-            }
-          } else {
-            console.log(`SQL tool execution already exists for message ${messageId}`);
-          }
-        } else {
-          console.log(`SQL tool call at index ${partIndex} not yet completed (no output)`);
-        }
-      }
-      
-      // Gestisci altri tipi di tool calls se necessario
-      else if (part.type?.startsWith('tool-') && part.type !== 'tool-read_sql_db') {
-        console.log(`Found other tool call:`, part.type, {
-          toolCallId: part.toolCallId,
-          state: part.state,
-          hasInput: !!part.input,
-          hasOutput: !!part.output
-        });
-        
-        // Salva solo se il tool call è completato
-        if (part.output || part.result) {
-          const toolExecution = {
-            message_id: messageId,
-            tool_name: part.type.replace('tool-', ''),
-            input_data: (part.input || part.args || {}) as never,
-            output_data: (part.output || part.result || null) as never,
-            execution_time_ms: part.executionTime ? 
-              parseInt(String(part.executionTime).replace('ms', '') || '0') : null,
-            success: part.success !== false,
-            error_message: part.error ? String(part.error) : null
-          };
-
-          const { error } = await supabase
-            .from('tool_executions')
-            .insert(toolExecution);
-
-          if (error) {
-            console.error(`Error saving tool execution for message ${messageId}:`, error);
-          } else {
-            console.log(`Saved ${part.type} tool execution for message ${messageId}`);
-          }
-        }
-      }
-    } catch (error) {
-      console.error(`Error processing tool execution at index ${partIndex}:`, error);
     }
   }
 }
@@ -232,8 +157,7 @@ async function saveMessage(sessionId: string, message: SaveMessageRequest['messa
     throw new Error(`Failed to save message: ${error.message}`);
   }
 
-  // Salva tutte le tool executions usando una funzione dedicata
-  await saveToolExecutions(message.id, message);
+  // Non salviamo più in tool_executions - le informazioni sono già nelle parts
 
   return { success: true, action: 'saved', data };
 }
@@ -273,7 +197,7 @@ export async function POST(request: NextRequest) {
         });
       }
 
-      console.log(`Saving message ${message.id} for session ${sessionId}`);
+      //console.log(`Saving message ${message.id} for session ${sessionId}`);
 
       // Assicurati che la sessione esista
       await ensureSessionExists(sessionId);

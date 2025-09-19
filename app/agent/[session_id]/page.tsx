@@ -41,6 +41,9 @@ export default function ChatSessionPage() {
   const saveMessage = useCallback(async (message: ChatMessage) => {
     try {
       console.log('Saving message via API:', message.id);
+      
+      // Controlla se questa è la prima volta che salviamo per questa sessione
+      const wasSessionExisting = sessionExists;
 
       const response = await fetch('/api/chat/save', {
         method: 'POST',
@@ -66,12 +69,29 @@ export default function ChatSessionPage() {
       }
 
       console.log(`Message ${message.id} saved successfully:`, result.message);
+      
+      // Se questa era una nuova sessione, aggiorna lo stato e notifica la sidebar
+      if (!wasSessionExisting) {
+        setSessionExists(true);
+        console.log('New session created, refreshing sidebar...');
+        
+        // Notifica la sidebar nella finestra corrente
+        try {
+          const windowWithRefresh = window as Window & { refreshChatSidebar?: () => void };
+          if (windowWithRefresh.refreshChatSidebar) {
+            windowWithRefresh.refreshChatSidebar();
+          }
+        } catch (err) {
+          console.log('Could not notify sidebar refresh:', err);
+        }
+      }
+      
       return true;
     } catch (error) {
       console.error('Error saving message via API:', error);
       return false; // Riprova in caso di errore di rete
     }
-  }, [sessionId]);
+  }, [sessionId, sessionExists]);
 
   // Funzione per verificare se una sessione esiste (l'API creerà la sessione se necessario)
   const checkSession = async () => {
@@ -134,7 +154,7 @@ export default function ChatSessionPage() {
     } else if (sessionId === 'new') {
       // Genera un nuovo UUID e reindirizza
       const newSessionId = uuidv4();
-      router.replace(`/sales-agent/${newSessionId}`);
+      router.replace(`/agent/${newSessionId}`);
     } else {
       setIsLoadingHistory(false);
     }
@@ -239,7 +259,6 @@ export default function ChatSessionPage() {
           <div className="w-4 h-4 bg-white rounded-full animate-bounce"></div>
           <div className="w-4 h-4 bg-white rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
           <div className="w-4 h-4 bg-white rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-          <span className="ml-2">Caricamento conversazione...</span>
         </div>
       </div>
     );
