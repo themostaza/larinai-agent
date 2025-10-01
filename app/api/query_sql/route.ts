@@ -2,49 +2,61 @@ import { NextRequest, NextResponse } from 'next/server';
 import sql from 'mssql';
 import { Client as PgClient } from 'pg';
 import { identify } from 'sql-query-identifier';
+import { createClient } from '@/lib/supabase/server';
 
-// Configurazione database dalle variabili d'ambiente
-const DB_CONFIG: sql.config = {
-  server: process.env.DB_SERVER!,
-  port: parseInt(process.env.DB_PORT || '1433'),
-  database: process.env.DB_DATABASE || 'DWH',
-  user: process.env.DB_USER!,
-  password: process.env.DB_PASSWORD!,
-  options: {
-    encrypt: false,
-    trustServerCertificate: true,
-    enableArithAbort: true,
-    requestTimeout: 30000
-  },
-  pool: {
-    max: 10,
-    min: 0,
-    idleTimeoutMillis: 30000
+
+// Funzione per ottenere la configurazione database dall'agent
+async function getAgentDbConfig(agentId: string) {
+  const supabase = await createClient();
+  const { data: agent, error } = await supabase
+    .from('agents')
+    .select('settings')
+    .eq('id', agentId)
+    .single();
+
+  if (error || !agent) {
+    throw new Error('Agent non trovato o errore nel recupero della configurazione');
   }
-};
 
-// Pool di connessioni SQL Server
-let pool: sql.ConnectionPool | null = null;
+  const settings = agent.settings as { tools?: { 'sql-tool'?: { config?: { database?: unknown } } } } | null;
+  const dbConfig = settings?.tools?.['sql-tool']?.config?.database;
 
-// Funzione per ottenere la connessione al database
-async function getDbConnection(): Promise<sql.ConnectionPool> {
-  if (!pool) {
-    pool = new sql.ConnectionPool(DB_CONFIG);
-    await pool.connect();
-    
-    pool.on('error', (error: Error) => {
-      console.error('Database pool error:', error);
-      pool = null;
-    });
+  if (!dbConfig) {
+    throw new Error('Configurazione database non trovata per questo agent');
   }
+
+  return dbConfig as {
+    type?: string;
+    server?: string;
+    port?: number;
+    database?: string;
+    user?: string;
+    password?: string;
+    encrypt?: boolean;
+    trustServerCertificate?: boolean;
+    enableArithAbort?: boolean;
+    requestTimeout?: number;
+  };
+}
+
+// Funzione per ottenere la connessione al database con configurazione dinamica
+async function getDbConnection(dbConfig: sql.config): Promise<sql.ConnectionPool> {
+  // Per ora creiamo una nuova connessione ogni volta (potremmo implementare pooling per agent)
+  const newPool = new sql.ConnectionPool(dbConfig);
+  await newPool.connect();
   
-  return pool;
+  newPool.on('error', (error: Error) => {
+    console.error('Database pool error:', error);
+  });
+  
+  return newPool;
 }
 
 
 
 // Interfaccia per la richiesta
 interface QueryRequest {
+  agentId?: string;
   database?: string;
   query: string;
   purpose?: string;
@@ -103,16 +115,20 @@ function validateSQLQuery(query: string): { isValid: boolean; error?: string; ty
 }
 
 // Funzione per eseguire query SQL Server
-async function executeSQLServer(query: string, database?: string): Promise<unknown[]> {
+async function executeSQLServer(query: string, dbConfig: sql.config, database?: string): Promise<unknown[]> {
   try {
-    const connection = await getDbConnection();
+    const connection = await getDbConnection(dbConfig);
     
     // Se viene specificato un database diverso, usa USE
-    if (database && database !== DB_CONFIG.database) {
+    if (database && database !== dbConfig.database) {
       await connection.request().query(`USE [${database}]`);
     }
     
     const result = await connection.request().query(query);
+    
+    // Chiudi la connessione
+    await connection.close();
+    
     return result.recordset || [];
   } catch (error) {
     console.error('SQL Server query error:', error);
@@ -120,30 +136,21 @@ async function executeSQLServer(query: string, database?: string): Promise<unkno
   }
 }
 
-// Funzione per ottenere la configurazione PostgreSQL
-function getPostgreSQLConfig(database?: string) {
-  // Se esiste DATABASE_URL, usala (tipico di Heroku)
-  if (process.env.DATABASE_URL) {
-    return {
-      connectionString: process.env.DATABASE_URL,
-      ssl: { rejectUnauthorized: false } // Heroku richiede sempre SSL
-    };
-  }
-  
-  // Altrimenti usa le variabili separate
+// Funzione per ottenere la configurazione PostgreSQL dall'agent config
+function getPostgreSQLConfigFromAgent(agentDbConfig: ReturnType<typeof getAgentDbConfig> extends Promise<infer T> ? T : never, database?: string) {
   return {
-    host: process.env.DB_SERVER,
-    port: parseInt(process.env.DB_PORT || '5432'),
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    database: database || process.env.DB_DATABASE,
-    ssl: { rejectUnauthorized: false } // Heroku richiede sempre SSL
+    host: agentDbConfig.server,
+    port: agentDbConfig.port || 5432,
+    user: agentDbConfig.user,
+    password: agentDbConfig.password,
+    database: database || agentDbConfig.database,
+    ssl: { rejectUnauthorized: false }
   };
 }
 
 // Funzione per eseguire query PostgreSQL
-async function executePostgreSQL(query: string, database?: string): Promise<unknown[]> {
-  const config = getPostgreSQLConfig(database);
+async function executePostgreSQL(query: string, agentDbConfig: Awaited<ReturnType<typeof getAgentDbConfig>>, database?: string): Promise<unknown[]> {
+  const config = getPostgreSQLConfigFromAgent(agentDbConfig, database);
   const client = new PgClient(config);
 
   try {
@@ -161,7 +168,7 @@ export async function POST(request: NextRequest) {
   
   try {
     const body: QueryRequest = await request.json();
-    const { database, query, purpose } = body;
+    const { agentId, database, query, purpose } = body;
 
     // Validazione input
     if (!query || typeof query !== 'string') {
@@ -174,21 +181,28 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // console.log('=== QUERY SQL REQUEST ===');
-    // console.log('Database:', database || DB_CONFIG.database);
-    // console.log('Purpose:', purpose);
-    // console.log('Query:', query);
+    if (!agentId) {
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'agentId è richiesto' 
+        },
+        { status: 400 }
+      );
+    }
+
+    // Recupera la configurazione del database dall'agent
+    const agentDbConfig = await getAgentDbConfig(agentId);
 
     // Validazione della query
     const validation = validateSQLQuery(query);
     if (!validation.isValid) {
-      //console.log('Validation error:', validation.error);
       return NextResponse.json(
         { 
           success: false, 
           error: validation.error,
           query,
-          database: database || DB_CONFIG.database
+          database: database || agentDbConfig.database
         },
         { status: 400 }
       );
@@ -198,21 +212,36 @@ export async function POST(request: NextRequest) {
     let results;
     const executionStart = Date.now();
 
-    // Determina il tipo di database dalle variabili d'ambiente
-    const dbType = process.env.DB_TYPE || 'mssql';
+    // Determina il tipo di database dalla configurazione dell'agent
+    const dbType = agentDbConfig.type || 'mssql';
     
     if (dbType === 'postgresql') {
-      results = await executePostgreSQL(query, database);
+      results = await executePostgreSQL(query, agentDbConfig, database);
     } else {
-      // Default a SQL Server
-      results = await executeSQLServer(query, database);
+      // Costruisci la configurazione SQL Server
+      const sqlServerConfig: sql.config = {
+        server: agentDbConfig.server!,
+        port: agentDbConfig.port || 1433,
+        database: database || agentDbConfig.database || 'DWH',
+        user: agentDbConfig.user!,
+        password: agentDbConfig.password!,
+        options: {
+          encrypt: agentDbConfig.encrypt !== false,
+          trustServerCertificate: agentDbConfig.trustServerCertificate !== false,
+          enableArithAbort: agentDbConfig.enableArithAbort !== false,
+          requestTimeout: agentDbConfig.requestTimeout || 30000
+        },
+        pool: {
+          max: 10,
+          min: 0,
+          idleTimeoutMillis: 30000
+        }
+      };
+      results = await executeSQLServer(query, sqlServerConfig, database);
     }
 
     const executionTime = Date.now() - executionStart;
     const totalTime = Date.now() - startTime;
-
-    // console.log(`Query executed successfully in ${executionTime}ms`);
-    // console.log(`Results count: ${Array.isArray(results) ? results.length : 'N/A'}`);
 
     // Limita i risultati per evitare risposte troppo grandi
     const maxResults = 1000;
@@ -227,7 +256,7 @@ export async function POST(request: NextRequest) {
         rowCount: Array.isArray(results) ? results.length : 0,
         executionTime: `${executionTime}ms`,
         totalTime: `${totalTime}ms`,
-        database: database || DB_CONFIG.database,
+        database: database || agentDbConfig.database,
         query,
         purpose,
         queryType: validation.type,
@@ -252,32 +281,28 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// Endpoint per testare la connessione
-export async function GET() {
+// Endpoint per testare la connessione (ora richiede agentId)
+export async function GET(request: NextRequest) {
   try {
-    // console.log('Testing database connection...');
-    
-    const dbType = process.env.DB_TYPE || 'mssql';
-    
-    if (dbType === 'postgresql') {
-      console.log('PostgreSQL Config:', {
-        usingDatabaseUrl: !!process.env.DATABASE_URL,
-        server: process.env.DATABASE_URL ? 'from DATABASE_URL' : process.env.DB_SERVER,
-        database: process.env.DATABASE_URL ? 'from DATABASE_URL' : process.env.DB_DATABASE,
-        type: dbType
-      });
-    } else {
-      console.log('SQL Server Config:', {
-        server: DB_CONFIG.server,
-        port: DB_CONFIG.port,
-        user: DB_CONFIG.user,
-        database: DB_CONFIG.database,
-        type: dbType
-      });
+    const { searchParams } = new URL(request.url);
+    const agentId = searchParams.get('agentId');
+
+    if (!agentId) {
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'agentId è richiesto per testare la connessione' 
+        },
+        { status: 400 }
+      );
     }
+
+    // Recupera la configurazione del database dall'agent
+    const agentDbConfig = await getAgentDbConfig(agentId);
+    const dbType = agentDbConfig.type || 'mssql';
     
     if (dbType === 'postgresql') {
-      const config = getPostgreSQLConfig();
+      const config = getPostgreSQLConfigFromAgent(agentDbConfig);
       const client = new PgClient(config);
 
       await client.connect();
@@ -285,53 +310,46 @@ export async function GET() {
       await client.end();
     } else {
       // Test SQL Server connection
-      const connection = await getDbConnection();
-      await connection.request().query('SELECT 1 as test');
-    }
-
-    const responseConfig = dbType === 'postgresql' 
-      ? {
-          type: dbType,
-          usingDatabaseUrl: !!process.env.DATABASE_URL,
-          server: process.env.DATABASE_URL ? 'from DATABASE_URL' : process.env.DB_SERVER,
-          database: process.env.DATABASE_URL ? 'from DATABASE_URL' : process.env.DB_DATABASE
+      const sqlServerConfig: sql.config = {
+        server: agentDbConfig.server!,
+        port: agentDbConfig.port || 1433,
+        database: agentDbConfig.database || 'DWH',
+        user: agentDbConfig.user!,
+        password: agentDbConfig.password!,
+        options: {
+          encrypt: agentDbConfig.encrypt !== false,
+          trustServerCertificate: agentDbConfig.trustServerCertificate !== false,
+          enableArithAbort: agentDbConfig.enableArithAbort !== false,
+          requestTimeout: agentDbConfig.requestTimeout || 30000
+        },
+        pool: {
+          max: 10,
+          min: 0,
+          idleTimeoutMillis: 30000
         }
-      : {
-          type: dbType,
-          server: DB_CONFIG.server,
-          port: DB_CONFIG.port,
-          database: DB_CONFIG.database
-        };
+      };
+      const connection = await getDbConnection(sqlServerConfig);
+      await connection.request().query('SELECT 1 as test');
+      await connection.close();
+    }
 
     return NextResponse.json({ 
       success: true, 
       message: 'Connessione al database riuscita',
-      config: responseConfig
+      config: {
+        type: dbType,
+        server: agentDbConfig.server,
+        database: agentDbConfig.database
+      }
     });
 
   } catch (error) {
     console.error('Database connection test failed:', error);
     
-    const dbType = process.env.DB_TYPE || 'mssql';
-    const errorConfig = dbType === 'postgresql' 
-      ? {
-          type: dbType,
-          usingDatabaseUrl: !!process.env.DATABASE_URL,
-          server: process.env.DATABASE_URL ? 'from DATABASE_URL' : process.env.DB_SERVER,
-          database: process.env.DATABASE_URL ? 'from DATABASE_URL' : process.env.DB_DATABASE
-        }
-      : {
-          type: dbType,
-          server: DB_CONFIG.server,
-          port: DB_CONFIG.port,
-          database: DB_CONFIG.database
-        };
-    
     return NextResponse.json(
       { 
         success: false, 
-        error: error instanceof Error ? error.message : 'Errore di connessione al database',
-        config: errorConfig
+        error: error instanceof Error ? error.message : 'Errore di connessione al database'
       },
       { status: 500 }
     );

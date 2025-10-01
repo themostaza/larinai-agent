@@ -3,9 +3,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useChat } from '@ai-sdk/react';
 import { useParams, useRouter } from 'next/navigation';
-import DatabaseQueryButton from '../../components/DatabaseQueryButton';
-import ChatSidebar from '../../components/ChatSidebar';
-import { v4 as uuidv4 } from 'uuid';
+import DatabaseQueryButton from '../../../components/DatabaseQueryButton';
+import ChatSidebar from '../../../components/ChatSidebar';
 
 interface MessagePart {
   type: string;
@@ -27,22 +26,33 @@ interface ChatMessage {
 
 export default function ChatSessionPage() {
   const params = useParams();
-  const router = useRouter();
-  const sessionId = params.session_id as string;
+  const agentId = params.agentId as string;
+  const sessionId = params.sessionId as string;
   
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
   const [sessionExists, setSessionExists] = useState(false);
   
-  const { messages, setMessages, sendMessage } = useChat();
+  console.log('🟢 [CLIENT] agentId:', agentId, 'sessionId:', sessionId);
+  
+  // useChat semplice - passeremo sessionId con ogni sendMessage
+  const { messages, setMessages, sendMessage: baseSendMessage } = useChat();
+
+  // Wrapper per sendMessage che include sessionId nel body
+  const sendMessage = useCallback((message: { text: string }) => {
+    baseSendMessage(message, {
+      body: {
+        sessionId: sessionId
+      }
+    });
+  }, [baseSendMessage, sessionId]);
 
   // Funzione per salvare un messaggio tramite API
   const saveMessage = useCallback(async (message: ChatMessage) => {
     try {
       console.log('Saving message via API:', message.id);
       
-      // Controlla se questa è la prima volta che salviamo per questa sessione
       const wasSessionExisting = sessionExists;
 
       const response = await fetch('/api/chat/save', {
@@ -61,21 +71,19 @@ export default function ChatSessionPage() {
       if (!result.success) {
         if (result.shouldRetry) {
           console.log(`Message ${message.id} not ready yet, will retry later`);
-          return false; // Indica che dobbiamo riprovare
+          return false;
         } else {
           console.log(`Message ${message.id} skipped:`, result.error);
-          return true; // Non riprovare
+          return true;
         }
       }
 
       console.log(`Message ${message.id} saved successfully:`, result.message);
       
-      // Se questa era una nuova sessione, aggiorna lo stato e notifica la sidebar
       if (!wasSessionExisting) {
         setSessionExists(true);
         console.log('New session created, refreshing sidebar...');
         
-        // Notifica la sidebar nella finestra corrente
         try {
           const windowWithRefresh = window as Window & { refreshChatSidebar?: () => void };
           if (windowWithRefresh.refreshChatSidebar) {
@@ -89,29 +97,39 @@ export default function ChatSessionPage() {
       return true;
     } catch (error) {
       console.error('Error saving message via API:', error);
-      return false; // Riprova in caso di errore di rete
+      return false;
     }
   }, [sessionId, sessionExists]);
 
-  // Funzione per verificare se una sessione esiste (l'API creerà la sessione se necessario)
   const checkSession = async () => {
     try {
-      const response = await fetch(`/api/chat/save?sessionId=${sessionId}`);
+      // Crea o verifica la sessione usando il nuovo endpoint
+      const response = await fetch('/api/chat/sessions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          sessionId,
+          agentId
+        }),
+      });
+      
       const result = await response.json();
       
       if (result.success) {
         setSessionExists(true);
+        console.log(`Session ${result.action}:`, result.sessionId);
         return true;
       }
       
       return false;
     } catch (error) {
-      console.error('Error checking session:', error);
+      console.error('Error checking/creating session:', error);
       return false;
     }
   };
 
-  // Funzione per caricare la cronologia dei messaggi
   const loadChatHistory = useCallback(async () => {
     try {
       setIsLoadingHistory(true);
@@ -126,7 +144,6 @@ export default function ChatSessionPage() {
       }
 
       if (!result.sessionExists) {
-        // Sessione non esiste, verrà creata al primo messaggio
         console.log('Session does not exist, will be created on first message');
         setIsLoadingHistory(false);
         return;
@@ -144,31 +161,22 @@ export default function ChatSessionPage() {
     }
   }, [sessionId, setMessages]);
 
-  // Tieni traccia del numero di messaggi per identificare quelli nuovi
   const [lastMessageCount, setLastMessageCount] = useState(0);
 
-  // Carica la cronologia all'avvio
   useEffect(() => {
-    if (sessionId && sessionId !== 'new') {
+    if (sessionId && agentId) {
       loadChatHistory();
-    } else if (sessionId === 'new') {
-      // Genera un nuovo UUID e reindirizza
-      const newSessionId = uuidv4();
-      router.replace(`/agent/${newSessionId}`);
     } else {
       setIsLoadingHistory(false);
     }
-  }, [sessionId, router, loadChatHistory]);
+  }, [sessionId, agentId, loadChatHistory]);
 
-  // Salva automaticamente i messaggi quando cambiano (solo per i nuovi messaggi COMPLETATI)
   useEffect(() => {
     if (messages.length > lastMessageCount && !isLoadingHistory && sessionExists) {
-      // Salva solo i messaggi nuovi
       const newMessages = messages.slice(lastMessageCount);
       
       newMessages.forEach(async (message) => {
         const chatMessage = message as ChatMessage;
-        // Non salvare messaggi già salvati o ancora in streaming
         if (!chatMessage.savedToDb && !isMessageStreaming(chatMessage)) {
           console.log('Saving completed message:', message);
           await saveMessage(chatMessage);
@@ -179,7 +187,6 @@ export default function ChatSessionPage() {
     }
   }, [messages, lastMessageCount, isLoadingHistory, sessionExists, saveMessage]);
 
-  // Funzione per controllare se un messaggio è ancora in streaming
   const isMessageStreaming = (message: ChatMessage): boolean => {
     if (!message.parts || !Array.isArray(message.parts)) return false;
     
@@ -189,33 +196,28 @@ export default function ChatSessionPage() {
     );
   };
 
-  // Effetto per salvare i messaggi completati (controllo periodico)
   useEffect(() => {
     if (!sessionExists || isLoadingHistory) return;
 
     const interval = setInterval(async () => {
       for (const message of messages) {
         const chatMessage = message as ChatMessage;
-        // Salva solo messaggi non ancora salvati
         if (!chatMessage.savedToDb) {
           console.log('Attempting to save message from interval:', message.id);
           const saved = await saveMessage(chatMessage);
           
           if (saved) {
-            // Marca come salvato per evitare salvataggi multipli
             chatMessage.savedToDb = true;
           }
-          // Se saved è false, riproveremo al prossimo intervallo
         }
       }
-    }, 3000); // Controlla ogni 3 secondi
+    }, 3000);
 
     return () => clearInterval(interval);
   }, [messages, sessionExists, isLoadingHistory, saveMessage]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInput(e.target.value);
-    // Auto-resize textarea
     e.target.style.height = 'auto';
     e.target.style.height = e.target.scrollHeight + 'px';
   };
@@ -224,24 +226,18 @@ export default function ChatSessionPage() {
     e.preventDefault();
     if (!input.trim() || isLoading) return;
 
-    // Verifica la sessione (l'API la creerà se necessario)
     if (!sessionExists) {
       const checked = await checkSession();
       if (!checked) {
         console.error('Failed to verify/create session');
-        // Continua comunque, l'API creerà la sessione al primo salvataggio
       }
     }
 
     setIsLoading(true);
     try {
-      // Invia il messaggio all'AI secondo la nuova API v5
       sendMessage({ text: input });
-      
-      // I messaggi verranno salvati automaticamente tramite l'effetto
       setInput('');
       
-      // Reset textarea height
       const textarea = document.querySelector('textarea');
       if (textarea) {
         textarea.style.height = 'auto';
@@ -251,7 +247,6 @@ export default function ChatSessionPage() {
     }
   };
 
-  // Mostra loading durante il caricamento della cronologia
   if (isLoadingHistory) {
     return (
       <div className="min-h-screen bg-black text-white flex items-center justify-center">
@@ -267,17 +262,15 @@ export default function ChatSessionPage() {
   return (
     <>
       <style jsx global>{`
-        /* Custom scrollbar styles for textarea - only show when scrolling is needed */
         textarea {
-          scrollbar-width: none; /* Firefox - hide by default */
+          scrollbar-width: none;
           scrollbar-color: transparent transparent;
         }
         
         textarea::-webkit-scrollbar {
-          width: 0px; /* Hide by default */
+          width: 0px;
         }
         
-        /* Show scrollbar only when content overflows */
         textarea:hover::-webkit-scrollbar,
         textarea:focus::-webkit-scrollbar {
           width: 8px;
@@ -304,7 +297,6 @@ export default function ChatSessionPage() {
           display: none;
         }
         
-        /* Firefox - show scrollbar on hover/focus when needed */
         textarea:hover,
         textarea:focus {
           scrollbar-width: thin;
@@ -312,18 +304,15 @@ export default function ChatSessionPage() {
         }
       `}</style>
       <div className="min-h-screen bg-black text-white flex relative">
-        {/* Sidebar */}
         <ChatSidebar 
-          currentSessionId={sessionId} 
+          currentSessionId={sessionId}
+          agentId={agentId}
           onSessionSelect={(sessionId) => {
-            // Optional: handle session selection if needed
             console.log('Selected session:', sessionId);
           }}
         />
         
-        {/* Main Content */}
         <div className="flex-1 flex flex-col min-h-screen">
-          {/* Messages Area - with bottom padding to avoid overlap with fixed input */}
           <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 space-y-4 pb-32 sm:pb-40">
             <div className="max-w-4xl mx-auto w-full">
             {messages.map((message) => (
@@ -357,10 +346,8 @@ export default function ChatSessionPage() {
                           );
                         case 'step-start':
                         case 'reasoning':
-                          // Ignora questi tipi di part (sono interni all'AI)
                           return null;
                         default:
-                          // Per debug, mostra tipi sconosciuti
                           console.log('Unknown part type:', part.type, part);
                           return null;
                       }
@@ -388,7 +375,6 @@ export default function ChatSessionPage() {
             </div>
           </div>
 
-          {/* Fixed Input Area */}
           <div className="fixed bottom-0 left-0 right-0 bg-transparent sm:p-6 w-full">
           <div className="max-w-4xl mx-auto w-full">
             <form onSubmit={handleSubmit} className="flex gap-3 items-end">

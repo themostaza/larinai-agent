@@ -1,29 +1,38 @@
 import { tool } from 'ai';
 import { z } from 'zod';
 
-export const readSqlDbTool = tool({
-  description: `
+interface SqlToolConfig {
+  database?: {
+    server?: string;
+    port?: number;
+    database?: string;
+    user?: string;
+    password?: string;
+    type?: string;
+    [key: string]: unknown;
+  };
+  description?: string;
+}
+
+export const readSqlDbTool = (agentId: string, config?: unknown) => {
+  const toolConfig = config as SqlToolConfig | undefined;
+  const description = toolConfig?.description || `
   Esegui query SQL sui database aziendali per ottenere dati per l'utente e aiutare nella comprensione.
   Puoi esplorare lo schema del database per ottenere informazioni sui dati disponibili e sulla struttura delle tabelle
+  `;
 
-  }`,
-  inputSchema: z.object({
-    database: z.string().optional().describe('Il nome del database su cui eseguire la query (opzionale, usa il default se non specificato)'),
-    query: z.string().describe('La query SQL da eseguire (SELECT, JOIN, WHERE, GROUP BY, etc.)'),
-    purpose: z.string().describe('Breve descrizione dello scopo della query per logging')
-  }),
-  execute: async ({ database, query, purpose }) => {
-    // console.log(`🔧 [SQL-TOOL] ============ TOOL EXECUTION START ============`);
-    // console.log(`🔧 [SQL-TOOL] Executing SQL query on ${database}: ${purpose}`);
-    // console.log(`🔧 [SQL-TOOL] Query: ${query}`);
-    // console.log(`🔧 [SQL-TOOL] Timestamp: ${new Date().toISOString()}`);
+  return tool({
+    description,
+    inputSchema: z.object({
+      database: z.string().optional().describe('Il nome del database su cui eseguire la query (opzionale, usa il default se non specificato)'),
+      query: z.string().describe('La query SQL da eseguire (SELECT, JOIN, WHERE, GROUP BY, etc.)'),
+      purpose: z.string().describe('Breve descrizione della della query')
+    }),
+    execute: async ({ database, query, purpose }) => {
     
     try {
-      //console.log(`🔧 [SQL-TOOL] Making fetch request to /api/query_sql`);
-      // Chiamata all'API /query per eseguire la query reale
       const baseUrl = process.env.NEXTAUTH_URL || process.env.VERCEL_URL || 'http://localhost:3000';
       const apiUrl = `${baseUrl}/api/query_sql`;
-      // console.log(`🔧 [SQL-TOOL] Using API URL: ${apiUrl}`);
       
       const response = await fetch(apiUrl, {
         method: 'POST',
@@ -31,16 +40,17 @@ export const readSqlDbTool = tool({
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          agentId,
           database,
           query,
           purpose
         })
       });
 
-      console.log(`🔧 [SQL-TOOL] Response status: ${response.status}`);
+      //console.log(`🔧 [SQL-TOOL] Response status: ${response.status}`);
       
       if (!response.ok) {
-        console.log(`🔧 [SQL-TOOL] Response not ok: ${response.status} ${response.statusText}`);
+        //console.log(`🔧 [SQL-TOOL] Response not ok: ${response.status} ${response.statusText}`);
         return {
           database,
           query,
@@ -51,10 +61,10 @@ export const readSqlDbTool = tool({
       }
 
       const result = await response.json();
-      console.log(`🔧 [SQL-TOOL] Parsed result:`, { success: result.success, hasData: !!result.data });
+      //console.log(`🔧 [SQL-TOOL] Parsed result:`, { success: result.success, hasData: !!result.data });
 
       if (!result.success) {
-        console.log(`🔧 [SQL-TOOL] Query failed:`, result.error);
+        //console.log(`🔧 [SQL-TOOL] Query failed:`, result.error);
         return {
           database,
           query,
@@ -64,7 +74,7 @@ export const readSqlDbTool = tool({
         };
       }
 
-      console.log(`🔧 [SQL-TOOL] Query successful, returning data`);
+      //console.log(`🔧 [SQL-TOOL] Query successful, returning data`);
       return {
         database: result.data.database,
         query: result.data.query,
@@ -78,7 +88,7 @@ export const readSqlDbTool = tool({
       };
 
     } catch (error) {
-      console.error('🔧 [SQL-TOOL] Error calling query API:', error);
+      //console.error('🔧 [SQL-TOOL] Error calling query API:', error);
       const errorResult = {
         database,
         query,
@@ -86,8 +96,9 @@ export const readSqlDbTool = tool({
         error: `Errore nella chiamata API: ${error instanceof Error ? error.message : 'Errore sconosciuto'}`,
         success: false
       };
-      console.log(`🔧 [SQL-TOOL] Returning error result:`, errorResult);
+      //console.log(`🔧 [SQL-TOOL] Returning error result:`, errorResult);
       return errorResult;
     }
-  },
-});
+    },
+  });
+};

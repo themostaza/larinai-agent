@@ -58,3 +58,78 @@ export async function GET(request: NextRequest) {
     }, { status: 500 });
   }
 }
+
+// POST: Crea o verifica una sessione
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { sessionId, agentId } = body;
+
+    if (!sessionId || !agentId) {
+      return NextResponse.json(
+        { success: false, error: 'Missing required fields: sessionId, agentId' },
+        { status: 400 }
+      );
+    }
+
+    // Verifica se la sessione esiste già
+    const { data: existingSession } = await supabase
+      .from('chat_sessions')
+      .select('id, agent_id')
+      .eq('id', sessionId)
+      .single();
+
+    if (existingSession) {
+      return NextResponse.json({
+        success: true,
+        sessionId: existingSession.id,
+        action: 'existing',
+        message: 'Session already exists'
+      });
+    }
+
+    // Crea la nuova sessione
+    const { data: newSession, error } = await supabase
+      .from('chat_sessions')
+      .insert({
+        id: sessionId,
+        agent_id: agentId,
+        title: 'Nuova Conversazione',
+        user_id: null, // Per ora senza autenticazione
+      })
+      .select()
+      .single();
+
+    if (error) {
+      // Se è un errore di duplicato (race condition), va bene
+      if (error.code === '23505') {
+        return NextResponse.json({
+          success: true,
+          sessionId,
+          action: 'existing',
+          message: 'Session created by another request'
+        });
+      }
+      
+      throw new Error(`Failed to create session: ${error.message}`);
+    }
+
+    return NextResponse.json({
+      success: true,
+      sessionId: newSession.id,
+      action: 'created',
+      message: 'Session created successfully',
+      data: newSession
+    });
+
+  } catch (error) {
+    console.error('Error in create session API:', error);
+    return NextResponse.json(
+      { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Internal server error' 
+      },
+      { status: 500 }
+    );
+  }
+}

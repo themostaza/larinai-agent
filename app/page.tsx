@@ -3,12 +3,22 @@ import Link from "next/link";
 export default function Home() {
   return (
     <div className="min-h-screen bg-black text-white">
+      {/* Header with Login Button */}
+      <header className="absolute top-0 right-0 p-6">
+        <Link 
+          href="/login"
+          className="px-6 py-2.5 bg-white text-black font-semibold rounded-lg hover:bg-gray-100 transition-colors"
+        >
+          Accedi
+        </Link>
+      </header>
+
       {/* Hero Section */}
       <main className="flex flex-col items-center justify-center min-h-screen px-4 sm:px-6 lg:px-8">
         <div className="text-center max-w-4xl mx-auto">
           {/* Main Title */}
           <h1 className="text-4xl sm:text-5xl lg:text-6xl xl:text-7xl font-bold tracking-tight mb-6 sm:mb-8 text-white">
-            LarinAI
+            AI
             <br />
             <span className="text-gray-400">Agent</span>
           </h1>
@@ -22,7 +32,7 @@ export default function Home() {
           {/* CTA Button */}
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-20 sm:mb-24">
             <Link 
-              href="/agent/new"
+              href="/register"
               className="inline-flex items-center justify-center px-12 py-4 text-lg font-semibold text-black bg-white rounded-lg hover:bg-gray-100 transition-all duration-200 min-w-[280px] sm:min-w-[320px]"
             >
               Dialoga con l&apos;Agent

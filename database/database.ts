@@ -39,6 +39,41 @@ export type Database = {
   }
   public: {
     Tables: {
+      agents: {
+        Row: {
+          created_at: string
+          id: string
+          name: string | null
+          organization_id: string | null
+          settings: Json | null
+          system_prompt: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name?: string | null
+          organization_id?: string | null
+          settings?: Json | null
+          system_prompt?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string | null
+          organization_id?: string | null
+          settings?: Json | null
+          system_prompt?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agents_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organization"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       chat_messages: {
         Row: {
           created_at: string | null
@@ -82,6 +117,7 @@ export type Database = {
       }
       chat_sessions: {
         Row: {
+          agent_id: string | null
           created_at: string | null
           id: string
           metadata: Json | null
@@ -90,6 +126,7 @@ export type Database = {
           user_id: string | null
         }
         Insert: {
+          agent_id?: string | null
           created_at?: string | null
           id?: string
           metadata?: Json | null
@@ -98,6 +135,7 @@ export type Database = {
           user_id?: string | null
         }
         Update: {
+          agent_id?: string | null
           created_at?: string | null
           id?: string
           metadata?: Json | null
@@ -105,7 +143,136 @@ export type Database = {
           updated_at?: string | null
           user_id?: string | null
         }
+        Relationships: [
+          {
+            foreignKeyName: "chat_sessions_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chat_sessions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      invited_users: {
+        Row: {
+          created_at: string
+          email: string | null
+          id: number
+          organization_id: string | null
+          role: string | null
+        }
+        Insert: {
+          created_at?: string
+          email?: string | null
+          id?: number
+          organization_id?: string | null
+          role?: string | null
+        }
+        Update: {
+          created_at?: string
+          email?: string | null
+          id?: number
+          organization_id?: string | null
+          role?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "invited_users_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organization"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      link_organization_user: {
+        Row: {
+          created_at: string
+          id: number
+          organization_id: string | null
+          role: string | null
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: number
+          organization_id?: string | null
+          role?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: number
+          organization_id?: string | null
+          role?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "link_organization_user_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organization"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      organization: {
+        Row: {
+          created_at: string
+          id: string
+          name: string | null
+          settings: Json | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name?: string | null
+          settings?: Json | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string | null
+          settings?: Json | null
+        }
         Relationships: []
+      }
+      query_ececutions: {
+        Row: {
+          created_at: string
+          id: number
+          output: Json | null
+          query_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: number
+          output?: Json | null
+          query_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: number
+          output?: Json | null
+          query_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "query_ececutions_query_id_fkey"
+            columns: ["query_id"]
+            isOneToOne: false
+            referencedRelation: "query_saved"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       query_saved: {
         Row: {

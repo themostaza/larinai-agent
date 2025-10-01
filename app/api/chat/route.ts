@@ -1,24 +1,71 @@
 import { openai } from '@ai-sdk/openai';
 import { streamText, UIMessage, convertToModelMessages, stepCountIs } from 'ai';
 import { readSqlDbTool } from './tools/sql-tool';
-import { giveNameToCurrentChatTool } from './tools/name-chat-tool';
+import { createClient } from '@/lib/supabase/server';
 
 // Allow streaming responses up to 30 seconds
 export const maxDuration = 30;
 
 export async function POST(req: Request) {
-  const { messages }: { messages: UIMessage[] } = await req.json();
+  const body = await req.json();
+  const { messages, sessionId }: { messages: UIMessage[]; sessionId: string } = body;
 
-  // Ottieni data e ora correnti in UTC
-  const now = new Date();
-  const currentDateTimeUTC = now.toISOString();
-  const currentDateUTC = now.toISOString().split('T')[0];
-  const currentTimeUTC = now.toISOString().split('T')[1].split('.')[0];
+  console.log('🔵 [CHAT] Request:', { sessionId, messagesCount: messages?.length });
 
-  // System prompt per il sales agent con informazioni sui database
-  const systemPrompt = `
-  
-  Sei l'Agent AI dell'utente in chat con te.
+  if (!sessionId) {
+    console.error('❌ [CHAT] sessionId missing!');
+    return new Response(
+      JSON.stringify({ error: 'sessionId è obbligatorio' }),
+      { status: 400, headers: { 'Content-Type': 'application/json' } }
+    );
+  }
+
+  try {
+    const supabase = await createClient();
+    
+    // 1. Recupera la sessione con l'agent_id
+    const { data: session, error: sessionError } = await supabase
+      .from('chat_sessions')
+      .select('agent_id')
+      .eq('id', sessionId)
+      .single();
+
+    if (sessionError || !session || !session.agent_id) {
+      console.error('❌ [CHAT] Session non trovata o senza agent_id:', sessionError);
+      return new Response(
+        JSON.stringify({ error: 'Sessione non trovata' }),
+        { status: 404, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const agentId = session.agent_id;
+    console.log('🟢 [CHAT] Agent ID recuperato dalla sessione:', agentId);
+
+    // 2. Recupera le configurazioni dell'agent dal database
+    const { data: agent, error } = await supabase
+      .from('agents')
+      .select('system_prompt, settings')
+      .eq('id', agentId)
+      .single();
+
+    if (error || !agent) {
+      console.error('❌ [CHAT] Agent non trovato:', error);
+      return new Response(
+        JSON.stringify({ error: 'Agent non trovato' }),
+        { status: 404, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+
+    console.log('🟢 [CHAT] Agent caricato:', { agentId, hasSystemPrompt: !!agent.system_prompt, hasSettings: !!agent.settings });
+
+    // Ottieni data e ora correnti in UTC
+    const now = new Date();
+    const currentDateTimeUTC = now.toISOString();
+    const currentDateUTC = now.toISOString().split('T')[0];
+    const currentTimeUTC = now.toISOString().split('T')[1].split('.')[0];
+
+    // Usa il system prompt dal database, o un default se non presente
+    let systemPrompt = agent.system_prompt || `Sei l'Agent AI dell'utente in chat con te.
 
 CONTESTO TEMPORALE CORRENTE:
 - Data di oggi (UTC): ${currentDateUTC}
@@ -29,7 +76,6 @@ Il tuo ruolo è:
 - Assistere l'utente con analisi e insights basati sui dati
 - Aiutare con strategie di follow-up usando dati storici
 - Analizzare performance e trend
-- Assegnare automaticamente nomi descrittivi alle conversazioni quando appropriato e solo all'inizio della conversazione (dopo i primi 3 o 4 messaggi diciamo ma vedi tu)
 
 Quando ti viene chiesta un'analisi:
 1. Identifica quali database e tabelle consultare
@@ -38,26 +84,56 @@ Quando ti viene chiesta un'analisi:
 4. Suggerisci prossimi passi basati sui dati
 5. Usa il contesto temporale corrente per analisi storiche (es. "negli ultimi 30 giorni", "questo mese", "quest'anno")
 
-NAMING DELLA CHAT:
-- Quando la conversazione sviluppa un tema specifico o focus principale, usa il tool "give_name_to_current_chat"
-- Assegna un nome breve, descrittivo e catchy (massimo 50 caratteri)
-- Il nome deve riflettere l'argomento principale o l'obiettivo della conversazione
-- Esempi: "Analisi Vendite Q3", "Performance Marketing Digitale", "Trend Clienti Premium"
-- Non aspettare che l'utente chieda di nominare la chat - fallo proattivamente quando ha senso
-
 Rispondi sempre in italiano e mantieni un tono professionale ma accessibile.`;
 
-  const result = streamText({
-    model: openai('gpt-5-mini-2025-08-07'),
-    system: systemPrompt,
-    messages: convertToModelMessages(messages),
-    stopWhen: stepCountIs(5), // Permetti fino a 5 step per query multiple
-    tools: {
-      read_sql_db: readSqlDbTool,
-      give_name_to_current_chat: giveNameToCurrentChatTool,
-    },
-  });
+    // Aggiungi il contesto temporale se non già presente
+    if (!systemPrompt.includes('CONTESTO TEMPORALE')) {
+      systemPrompt += `
 
-  return result.toUIMessageStreamResponse();
+CONTESTO TEMPORALE CORRENTE:
+- Data di oggi (UTC): ${currentDateUTC}
+- Ora corrente (UTC): ${currentTimeUTC}
+- Timestamp completo (UTC): ${currentDateTimeUTC}`;
+    }
+
+    // 3. Costruisci dinamicamente la lista di tool abilitati
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const enabledTools: Record<string, any> = {};
+    const agentSettings = agent.settings as { tools?: Record<string, { enabled: boolean, config?: unknown }> } | null;
+    
+    if (agentSettings?.tools) {
+      // Abilita solo i tool configurati e abilitati
+      for (const [toolName, toolSettings] of Object.entries(agentSettings.tools)) {
+        if (toolSettings.enabled) {
+          // Crea il tool con la configurazione specifica
+          if (toolName === 'sql-tool') {
+            enabledTools['read_sql_db'] = readSqlDbTool(agentId, toolSettings.config);
+          }
+          // Aggiungi altri tool qui quando disponibili
+        }
+      }
+      console.log('🟢 [CHAT] Tools abilitati:', Object.keys(enabledTools));
+    } else {
+      // Default: abilita sql-tool
+      console.log('⚠️ [CHAT] Nessun tool configurato, uso default sql-tool');
+      enabledTools['read_sql_db'] = readSqlDbTool(agentId, undefined);
+    }
+
+    const result = streamText({
+      model: openai('gpt-5-mini-2025-08-07'),
+      system: systemPrompt,
+      messages: convertToModelMessages(messages),
+      stopWhen: stepCountIs(5),
+      tools: enabledTools
+    });
+
+    return result.toUIMessageStreamResponse();
+
+  } catch (error) {
+    console.error('❌ [CHAT] Error in chat route:', error);
+    return new Response(
+      JSON.stringify({ error: 'Errore interno del server' }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
+    );
+  }
 }
-

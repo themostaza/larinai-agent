@@ -15,11 +15,12 @@ interface ChatSession {
 
 interface ChatSidebarProps {
   currentSessionId: string;
+  agentId?: string;
   onSessionSelect?: (sessionId: string) => void;
   onSessionsUpdate?: (sessions: ChatSession[]) => void;
 }
 
-export default function ChatSidebar({ currentSessionId, onSessionSelect, onSessionsUpdate }: ChatSidebarProps) {
+export default function ChatSidebar({ currentSessionId, agentId, onSessionSelect, onSessionsUpdate }: ChatSidebarProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -30,106 +31,55 @@ export default function ChatSidebar({ currentSessionId, onSessionSelect, onSessi
     setIsOpen(false);
   }, []);
 
-  // Funzione per caricare le sessioni con aggiornamento intelligente
-  const fetchSessions = async (forceRefresh = false) => {
-    try {
-      // Solo mostra loading se è il primo caricamento o refresh forzato
-      if (sessions.length === 0 || forceRefresh) {
+  // Fetch chat sessions UNA SOLA VOLTA al mount - SEMPLIFICATO
+  useEffect(() => {
+    const fetchSessions = async () => {
+      try {
         setIsLoading(true);
-      }
-      setError(null);
+        setError(null);
 
-      const response = await fetch('/api/chat/sessions');
-      const result = await response.json();
+        console.log('ChatSidebar: Fetching sessions (ONCE)...');
+        const response = await fetch('/api/chat/sessions');
+        const result = await response.json();
 
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to fetch sessions');
-      }
+        if (!result.success) {
+          throw new Error(result.error || 'Failed to fetch sessions');
+        }
 
-      const newSessions = result.sessions || [];
-      
-      // Aggiornamento intelligente: confronta solo i titoli e updated_at
-      if (sessions.length > 0 && !forceRefresh) {
-        const updatedSessions = sessions.map(existingSession => {
-          const updatedSession = newSessions.find((ns: ChatSession) => ns.id === existingSession.id);
-          if (updatedSession && 
-              (updatedSession.title !== existingSession.title || 
-               updatedSession.updatedAt !== existingSession.updatedAt)) {
-            // Aggiungi flag temporaneo per evidenziare l'aggiornamento
-            return { ...updatedSession, _justUpdated: true };
-          }
-          return existingSession;
-        });
-        
-        // Aggiungi nuove sessioni se ce ne sono
-        const newSessionsToAdd = newSessions.filter((ns: ChatSession) => 
-          !sessions.some(es => es.id === ns.id)
-        );
-        
-        const finalSessions = [...updatedSessions, ...newSessionsToAdd];
-        setSessions(finalSessions);
-        
-        // Rimuovi il flag _justUpdated dopo un breve delay
-        setTimeout(() => {
-          setSessions(prev => prev.map(s => ({ ...s, _justUpdated: false })));
-        }, 2000);
-        
-      } else {
-        // Primo caricamento o refresh completo
+        const newSessions = result.sessions || [];
         setSessions(newSessions);
+        
+        // Notifica il parent component se fornito
+        onSessionsUpdate?.(newSessions);
+        
+        console.log(`ChatSidebar: Successfully fetched ${newSessions.length} sessions (ONCE)`);
+      } catch (err) {
+        console.error('Error fetching chat sessions:', err);
+        setError(err instanceof Error ? err.message : 'Failed to load chat sessions');
+      } finally {
+        setIsLoading(false);
       }
-      
-      // Notifica il parent component se fornito
-      onSessionsUpdate?.(newSessions);
-      
-      return newSessions;
-    } catch (err) {
-      console.error('Error fetching chat sessions:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load chat sessions');
-      return [];
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Fetch chat sessions al mount
-  useEffect(() => {
-    fetchSessions();
-  }, [fetchSessions]);
-
-  // Funzione pubblica per forzare il refresh
-  const refreshSessions = () => {
-    fetchSessions(true); // Force refresh completo
-  };
-
-  // Refresh automatico quando si apre la sidebar
-  useEffect(() => {
-    if (isOpen && sessions.length > 0) {
-      // Refresh intelligente quando si apre la sidebar
-      fetchSessions(false);
-    }
-  }, [isOpen, fetchSessions, sessions.length]);
-
-  // Esponi la funzione di refresh al window per permettere chiamate dalla pagina di chat
-  useEffect(() => {
-    (window as Window & { refreshChatSidebar?: () => void }).refreshChatSidebar = refreshSessions;
-    
-    return () => {
-      delete (window as Window & { refreshChatSidebar?: () => void }).refreshChatSidebar;
     };
-  }, [refreshSessions]);
+
+    fetchSessions();
+  }, []); // NESSUNA DIPENDENZA - chiamata una sola volta
 
   const handleNewChat = () => {
+    if (!agentId) {
+      // Se non c'è agentId, torna alla home
+      window.location.href = '/back';
+      return;
+    }
     const newSessionId = uuidv4();
-    const newTab = window.open(`/agent/${newSessionId}`, '_blank');
+    const newTab = window.open(`/agent/${agentId}/${newSessionId}`, '_blank');
     if (newTab) {
       newTab.focus();
     }
   };
 
   const handleSessionClick = (sessionId: string) => {
-    if (sessionId !== currentSessionId) {
-      const newTab = window.open(`/agent/${sessionId}`, '_blank');
+    if (sessionId !== currentSessionId && agentId) {
+      const newTab = window.open(`/agent/${agentId}/${sessionId}`, '_blank');
       if (newTab) {
         newTab.focus();
       }

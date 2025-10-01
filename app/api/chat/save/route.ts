@@ -89,28 +89,6 @@ function hasUsefulContent(message: SaveMessageRequest['message']): boolean {
   });
 }
 
-// Funzione per creare una sessione se non esiste
-async function ensureSessionExists(sessionId: string) {
-  const { data: existingSession } = await supabase
-    .from('chat_sessions')
-    .select('id')
-    .eq('id', sessionId)
-    .single();
-
-  if (!existingSession) {
-    const { error } = await supabase
-      .from('chat_sessions')
-      .insert({
-        id: sessionId,
-        title: 'Nuova Conversazione',
-        user_id: null // Per ora senza autenticazione, poi potrai aggiungere auth.uid()
-      });
-
-    if (error && error.code !== '23505') { // Ignora errore di duplicato
-      throw new Error(`Failed to create session: ${error.message}`);
-    }
-  }
-}
 
 // Funzione per salvare un singolo messaggio
 async function saveMessage(sessionId: string, message: SaveMessageRequest['message']) {
@@ -197,11 +175,6 @@ export async function POST(request: NextRequest) {
         });
       }
 
-      //console.log(`Saving message ${message.id} for session ${sessionId}`);
-
-      // Assicurati che la sessione esista
-      await ensureSessionExists(sessionId);
-
       // Salva il messaggio
       const result = await saveMessage(sessionId, message);
 
@@ -223,9 +196,6 @@ export async function POST(request: NextRequest) {
       }
 
       console.log(`Saving ${messages.length} messages for session ${sessionId}`);
-
-      // Assicurati che la sessione esista
-      await ensureSessionExists(sessionId);
 
       const results = [];
       for (const message of messages) {

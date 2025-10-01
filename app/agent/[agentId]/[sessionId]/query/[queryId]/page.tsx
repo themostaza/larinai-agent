@@ -3,8 +3,8 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { Database, Download, Heart, Info, X, Check, AlertCircle, RefreshCw, BrainCircuit, Code } from 'lucide-react';
-import AgentChatSidebar from '../../../../components/AgentChatSidebar';
-import DynamicChartsContainer from '../../../../components/charts/DynamicChartsContainer';
+import AgentChatSidebar from '@/app/components/AgentChatSidebar';
+import DynamicChartsContainer from '@/app/components/charts/DynamicChartsContainer';
 
 // Definizione tipi per grafici e KPI
 interface KPIConfig {
@@ -64,7 +64,8 @@ export default function QueryPage() {
   const params = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const sessionId = params.session_id as string;
+  const agentId = params.agentId as string;
+  const sessionId = params.sessionId as string;
   const queryId = params.queryId as string;
   
   const [queryData, setQueryData] = useState<QueryData | null>(null);
@@ -245,7 +246,6 @@ export default function QueryPage() {
           <div className="w-4 h-4 bg-white rounded-full animate-bounce"></div>
           <div className="w-4 h-4 bg-white rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
           <div className="w-4 h-4 bg-white rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-          
         </div>
       </div>
     );
@@ -258,7 +258,7 @@ export default function QueryPage() {
           <div className="text-red-400 text-xl mb-4">❌ Errore</div>
           <div className="text-gray-300 mb-6">{error || 'Query non trovata'}</div>
           <button
-            onClick={() => router.push(`/agent/${sessionId}`)}
+            onClick={() => router.push(`/agent/${agentId}/${sessionId}`)}
             className="px-4 py-2 bg-white text-black rounded-lg hover:bg-gray-100 transition-colors"
           >
             Torna alla Chat

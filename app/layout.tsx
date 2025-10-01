@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "LarinAI Agent",
+  title: "AI Agent",
   description: "Agent intelligente che accede al database, alla RAG, alle API e alle connessioni aziendali per supportare le attività aziendali",
 };
 

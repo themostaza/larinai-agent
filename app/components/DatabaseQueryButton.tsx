@@ -29,12 +29,13 @@ export default function DatabaseQueryButton({ part, messageId, partIndex }: Data
 
   // Funzione per aprire la query in una nuova tab
   const openQueryInNewTab = () => {
-    // Estrai sessionId dall'URL corrente
+    // Estrai agentId e sessionId dall'URL corrente
     const currentPath = window.location.pathname;
-    const sessionMatch = currentPath.match(/\/agent\/([^\/]+)/);
-    const sessionId = sessionMatch ? sessionMatch[1] : 'unknown';
+    const pathMatch = currentPath.match(/\/agent\/([^\/]+)\/([^\/]+)/);
+    const agentId = pathMatch ? pathMatch[1] : 'unknown';
+    const sessionId = pathMatch ? pathMatch[2] : 'unknown';
     
-    const queryUrl = `/agent/${sessionId}/query/${queryId}`;
+    const queryUrl = `/agent/${agentId}/${sessionId}/query/${queryId}`;
     window.open(queryUrl, '_blank');
   };
 
