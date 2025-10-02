@@ -42,6 +42,8 @@ export default function BackOfficePage() {
   useEffect(() => {
     if (selectedOrgId) {
       fetchAgents(selectedOrgId);
+      // Salva la selezione in localStorage
+      localStorage.setItem('selectedOrganizationId', selectedOrgId);
     }
   }, [selectedOrgId]);
 
@@ -62,9 +64,20 @@ export default function BackOfficePage() {
 
       setOrganizations(data.organizations);
       
-      // Seleziona automaticamente la prima organizzazione
+      // Ripristina l'organizzazione selezionata da localStorage
+      const savedOrgId = localStorage.getItem('selectedOrganizationId');
+      
       if (data.organizations.length > 0) {
-        setSelectedOrgId(data.organizations[0].id);
+        // Verifica se l'organizzazione salvata è ancora valida
+        const isValidOrg = savedOrgId && data.organizations.some((org: Organization) => org.id === savedOrgId);
+        
+        if (isValidOrg) {
+          // Ripristina l'organizzazione salvata
+          setSelectedOrgId(savedOrgId);
+        } else {
+          // Altrimenti seleziona la prima organizzazione
+          setSelectedOrgId(data.organizations[0].id);
+        }
       }
     } catch (err) {
       console.error('Error fetching organizations:', err);

@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { Menu, X, Plus, MessageCircle } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Menu, X, Plus, MessageCircle, Sparkles, ChevronDown } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
+import { AVAILABLE_MODELS, getModelsByProvider } from '@/lib/ai/models';
 
 interface ChatSession {
   id: string;
@@ -18,17 +19,32 @@ interface ChatSidebarProps {
   agentId?: string;
   onSessionSelect?: (sessionId: string) => void;
   onSessionsUpdate?: (sessions: ChatSession[]) => void;
+  selectedModel?: string;
+  onModelChange?: (modelId: string) => void;
 }
 
-export default function ChatSidebar({ currentSessionId, agentId, onSessionSelect, onSessionsUpdate }: ChatSidebarProps) {
+export default function ChatSidebar({ currentSessionId, agentId, onSessionSelect, onSessionsUpdate, selectedModel, onModelChange }: ChatSidebarProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false);
+  const modelDropdownRef = useRef<HTMLDivElement>(null);
 
   // Sidebar collassata di default su tutte le dimensioni
   useEffect(() => {
     setIsOpen(false);
+  }, []);
+
+  // Chiudi dropdown quando clicchi fuori
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (modelDropdownRef.current && !modelDropdownRef.current.contains(event.target as Node)) {
+        setIsModelDropdownOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
   // Fetch chat sessions UNA SOLA VOLTA al mount - SEMPLIFICATO
@@ -114,9 +130,32 @@ export default function ChatSidebar({ currentSessionId, agentId, onSessionSelect
 
   return (
     <>
+      <style jsx>{`
+        .custom-scrollbar {
+          scrollbar-width: thin;
+          scrollbar-color: rgb(75 85 99) transparent;
+        }
+        
+        .custom-scrollbar::-webkit-scrollbar {
+          width: 6px;
+        }
+        
+        .custom-scrollbar::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background-color: rgb(75 85 99);
+          border-radius: 3px;
+        }
+        
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+          background-color: rgb(107 114 128);
+        }
+      `}</style>
       {/* Barra dei controlli quando sidebar è collassata */}
       {!isOpen && (
-        <div className="fixed top-4 left-4 z-50 flex gap-2">
+        <div className="fixed top-4 left-4 z-50 flex gap-2 flex-wrap">
           {/* Hamburger Button */}
           <button
             onClick={() => setIsOpen(true)}
@@ -140,6 +179,58 @@ export default function ChatSidebar({ currentSessionId, agentId, onSessionSelect
               Nuova chat
             </span>
           </button>
+
+          {/* Model Selector - Compatto */}
+          {selectedModel && onModelChange && (
+            <div className="relative" ref={modelDropdownRef}>
+              <button
+                onClick={() => setIsModelDropdownOpen(!isModelDropdownOpen)}
+                className="flex items-center gap-1.5 p-2 bg-gray-800 text-white rounded-lg border border-gray-700 hover:bg-gray-700 transition-all duration-300 h-[40px]"
+                title="Seleziona modello AI"
+              >
+                <Sparkles size={16} className="flex-shrink-0 text-purple-400" />
+                <span className="text-xs font-medium text-gray-200 max-w-[120px] truncate">
+                  {AVAILABLE_MODELS.find(m => m.id === selectedModel)?.name}
+                </span>
+                <ChevronDown size={14} className={`flex-shrink-0 text-gray-400 transition-transform ${isModelDropdownOpen ? 'rotate-180' : ''}`} />
+              </button>
+
+              {/* Dropdown Menu */}
+              {isModelDropdownOpen && (
+                <div className="absolute top-full left-0 mt-2 w-72 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-50 max-h-96 overflow-y-auto custom-scrollbar">
+                  {Object.entries(getModelsByProvider()).map(([provider, models]) => (
+                    <div key={provider} className="py-2">
+                      <div className="px-3 py-1 text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                        {provider}
+                      </div>
+                      {models.map((model) => (
+                        <button
+                          key={model.id}
+                          onClick={() => {
+                            onModelChange(model.id);
+                            setIsModelDropdownOpen(false);
+                          }}
+                          className={`w-full text-left px-3 py-2 hover:bg-gray-700 transition-colors ${
+                            selectedModel === model.id ? 'bg-gray-700 border-l-2 border-purple-500' : ''
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-white">{model.name}</p>
+                              <p className="text-xs text-gray-400 mt-0.5 line-clamp-2">{model.description}</p>
+                            </div>
+                            {selectedModel === model.id && (
+                              <div className="w-1.5 h-1.5 bg-purple-400 rounded-full mt-1.5 flex-shrink-0" />
+                            )}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -174,11 +265,68 @@ export default function ChatSidebar({ currentSessionId, agentId, onSessionSelect
           {/* New Chat Button */}
           <button
             onClick={handleNewChat}
-            className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-gray-800 text-white border border-gray-700 rounded-lg hover:bg-gray-700 transition-colors font-medium"
+            className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-gray-800 text-white border border-gray-700 rounded-lg hover:bg-gray-700 transition-colors font-medium mb-3"
           >
             <Plus size={18} />
             Nuova chat
           </button>
+
+          {/* Model Selector */}
+          {selectedModel && onModelChange && (
+            <div className="space-y-2 relative" ref={modelDropdownRef}>
+              <label className="flex items-center gap-2 text-xs font-medium text-gray-400">
+                <Sparkles size={14} className="text-purple-400" />
+                Modello AI
+              </label>
+              
+              <button
+                onClick={() => setIsModelDropdownOpen(!isModelDropdownOpen)}
+                className="w-full px-3 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent cursor-pointer hover:bg-gray-750 transition-colors flex items-center justify-between"
+              >
+                <span className="truncate">{AVAILABLE_MODELS.find(m => m.id === selectedModel)?.name}</span>
+                <ChevronDown size={16} className={`flex-shrink-0 text-gray-400 transition-transform ${isModelDropdownOpen ? 'rotate-180' : ''}`} />
+              </button>
+              
+              <p className="text-xs text-gray-500">
+                {AVAILABLE_MODELS.find(m => m.id === selectedModel)?.description}
+              </p>
+
+              {/* Dropdown Menu */}
+              {isModelDropdownOpen && (
+                <div className="absolute top-[70px] left-0 right-0 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-50 max-h-80 overflow-y-auto custom-scrollbar">
+                  {Object.entries(getModelsByProvider()).map(([provider, models]) => (
+                    <div key={provider} className="py-2">
+                      <div className="px-3 py-1 text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                        {provider}
+                      </div>
+                      {models.map((model) => (
+                        <button
+                          key={model.id}
+                          onClick={() => {
+                            onModelChange(model.id);
+                            setIsModelDropdownOpen(false);
+                          }}
+                          className={`w-full text-left px-3 py-2 hover:bg-gray-700 transition-colors ${
+                            selectedModel === model.id ? 'bg-gray-700 border-l-2 border-purple-500' : ''
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-white">{model.name}</p>
+                              <p className="text-xs text-gray-400 mt-0.5 line-clamp-2">{model.description}</p>
+                            </div>
+                            {selectedModel === model.id && (
+                              <div className="w-1.5 h-1.5 bg-purple-400 rounded-full mt-1.5 flex-shrink-0" />
+                            )}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Sessions List */}

@@ -5,6 +5,9 @@ import { useChat } from '@ai-sdk/react';
 import { useParams, useRouter } from 'next/navigation';
 import DatabaseQueryButton from '../../../components/DatabaseQueryButton';
 import ChatSidebar from '../../../components/ChatSidebar';
+import MarkdownMessage from '../../../components/MarkdownMessage';
+import { AVAILABLE_MODELS, DEFAULT_MODEL, getModelsByProvider } from '@/lib/ai/models';
+import { Copy, ThumbsUp, ThumbsDown, Check, Loader2 } from 'lucide-react';
 
 interface MessagePart {
   type: string;
@@ -33,20 +36,36 @@ export default function ChatSessionPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
   const [sessionExists, setSessionExists] = useState(false);
+  const [selectedModel, setSelectedModel] = useState<string>(DEFAULT_MODEL);
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   
   console.log('🟢 [CLIENT] agentId:', agentId, 'sessionId:', sessionId);
+  
+  // Carica il modello selezionato da localStorage al mount
+  useEffect(() => {
+    const savedModel = localStorage.getItem('selectedAIModel');
+    if (savedModel && AVAILABLE_MODELS.some(m => m.id === savedModel)) {
+      setSelectedModel(savedModel);
+    }
+  }, []);
+
+  // Salva il modello selezionato in localStorage quando cambia
+  useEffect(() => {
+    localStorage.setItem('selectedAIModel', selectedModel);
+  }, [selectedModel]);
   
   // useChat semplice - passeremo sessionId con ogni sendMessage
   const { messages, setMessages, sendMessage: baseSendMessage } = useChat();
 
-  // Wrapper per sendMessage che include sessionId nel body
+  // Wrapper per sendMessage che include sessionId e modelId nel body
   const sendMessage = useCallback((message: { text: string }) => {
     baseSendMessage(message, {
       body: {
-        sessionId: sessionId
+        sessionId: sessionId,
+        modelId: selectedModel
       }
     });
-  }, [baseSendMessage, sessionId]);
+  }, [baseSendMessage, sessionId, selectedModel]);
 
   // Funzione per salvare un messaggio tramite API
   const saveMessage = useCallback(async (message: ChatMessage) => {
@@ -172,12 +191,13 @@ export default function ChatSessionPage() {
   }, [sessionId, agentId, loadChatHistory]);
 
   useEffect(() => {
-    if (messages.length > lastMessageCount && !isLoadingHistory && sessionExists) {
+    // Salva SOLO quando il loading è terminato (risposta completa)
+    if (!isLoading && messages.length > lastMessageCount && !isLoadingHistory && sessionExists) {
       const newMessages = messages.slice(lastMessageCount);
       
       newMessages.forEach(async (message) => {
         const chatMessage = message as ChatMessage;
-        if (!chatMessage.savedToDb && !isMessageStreaming(chatMessage)) {
+        if (!chatMessage.savedToDb) {
           console.log('Saving completed message:', message);
           await saveMessage(chatMessage);
         }
@@ -185,7 +205,7 @@ export default function ChatSessionPage() {
       
       setLastMessageCount(messages.length);
     }
-  }, [messages, lastMessageCount, isLoadingHistory, sessionExists, saveMessage]);
+  }, [messages, lastMessageCount, isLoadingHistory, sessionExists, saveMessage, isLoading]);
 
   const isMessageStreaming = (message: ChatMessage): boolean => {
     if (!message.parts || !Array.isArray(message.parts)) return false;
@@ -196,14 +216,24 @@ export default function ChatSessionPage() {
     );
   };
 
+  const isMessageGenerating = (messageId: string): boolean => {
+    // Controlla se è l'ultimo messaggio e se è in fase di generazione
+    const lastMessage = messages[messages.length - 1];
+    if (!lastMessage || lastMessage.id !== messageId) return false;
+    
+    // Se è ancora in loading o se ha parti in streaming
+    return isLoading || isMessageStreaming(lastMessage as ChatMessage);
+  };
+
+  // Backup: salva messaggi non salvati ogni 10 secondi (solo se non in loading)
   useEffect(() => {
-    if (!sessionExists || isLoadingHistory) return;
+    if (!sessionExists || isLoadingHistory || isLoading) return;
 
     const interval = setInterval(async () => {
       for (const message of messages) {
         const chatMessage = message as ChatMessage;
         if (!chatMessage.savedToDb) {
-          console.log('Attempting to save message from interval:', message.id);
+          console.log('Backup save - attempting to save message:', message.id);
           const saved = await saveMessage(chatMessage);
           
           if (saved) {
@@ -211,15 +241,29 @@ export default function ChatSessionPage() {
           }
         }
       }
-    }, 3000);
+    }, 10000); // Aumentato a 10 secondi
 
     return () => clearInterval(interval);
-  }, [messages, sessionExists, isLoadingHistory, saveMessage]);
+  }, [messages, sessionExists, isLoadingHistory, saveMessage, isLoading]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInput(e.target.value);
     e.target.style.height = 'auto';
     e.target.style.height = e.target.scrollHeight + 'px';
+  };
+
+  const handleCopyMessage = (messageId: string, text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedMessageId(messageId);
+    setTimeout(() => setCopiedMessageId(null), 2000);
+  };
+
+  const getMessageText = (message: ChatMessage): string => {
+    if (!message.parts) return '';
+    return message.parts
+      .filter(part => part.type === 'text')
+      .map(part => part.text || '')
+      .join('');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -310,6 +354,8 @@ export default function ChatSessionPage() {
           onSessionSelect={(sessionId) => {
             console.log('Selected session:', sessionId);
           }}
+          selectedModel={selectedModel}
+          onModelChange={setSelectedModel}
         />
         
         <div className="flex-1 flex flex-col min-h-screen">
@@ -320,48 +366,93 @@ export default function ChatSessionPage() {
                 key={message.id}
                 className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'} mb-4`}
               >
-                <div
-                  className={`max-w-xs sm:max-w-md lg:max-w-lg xl:max-w-xl px-4 py-2 rounded-2xl ${
-                    message.role === 'user'
-                      ? 'bg-white text-black'
-                      : 'bg-gray-900 text-white border border-gray-700'
-                  }`}
-                >
-                  <div className="whitespace-pre-wrap leading-relaxed break-words">
-                    <span className="text-sm font-medium opacity-60">
-                      {message.role === 'user' ? 'Tu ' : 'AI '}
-                    </span>
-                    {message.parts?.map((part, i) => {
-                      switch (part.type) {
-                        case 'text':
-                          return <span key={`${message.id}-${i}`}>{part.text}</span>;
-                        case 'tool-read_sql_db':
-                          return (
-                            <DatabaseQueryButton
-                              key={`${message.id}-${i}`}
-                              part={part}
-                              messageId={message.id}
-                              partIndex={i}
-                            />
-                          );
-                        case 'step-start':
-                        case 'reasoning':
-                          return null;
-                        default:
-                          console.log('Unknown part type:', part.type, part);
-                          return null;
-                      }
-                    })}
+                <div className={`flex flex-col ${message.role === 'user' ? 'items-end' : 'items-start'} max-w-xs sm:max-w-md lg:max-w-lg xl:max-w-xl`}>
+                  <div
+                    className={`px-4 py-2 rounded-2xl ${
+                      message.role === 'user'
+                        ? 'bg-white text-black'
+                        : 'bg-gray-900 text-white border border-gray-700'
+                    }`}
+                  >
+                    <div className="leading-relaxed break-words">
+                      {message.parts?.map((part, i) => {
+                        switch (part.type) {
+                          case 'text':
+                            return (
+                              <div key={`${message.id}-${i}`} className="prose prose-invert prose-sm max-w-none">
+                                {message.role === 'assistant' ? (
+                                  <>
+                                    <MarkdownMessage content={part.text || ''} />
+                                    {isMessageGenerating(message.id) && (
+                                      <span className="inline-flex items-center ml-1 align-middle">
+                                        <Loader2 size={16} className="animate-spin text-gray-400" />
+                                      </span>
+                                    )}
+                                  </>
+                                ) : (
+                                  <p className="whitespace-pre-wrap">{part.text}</p>
+                                )}
+                              </div>
+                            );
+                          case 'tool-read_sql_db':
+                            return (
+                              <DatabaseQueryButton
+                                key={`${message.id}-${i}`}
+                                part={part}
+                                messageId={message.id}
+                                partIndex={i}
+                              />
+                            );
+                          case 'step-start':
+                          case 'reasoning':
+                            return null;
+                          default:
+                            console.log('Unknown part type:', part.type, part);
+                            return null;
+                        }
+                      })}
+                    </div>
                   </div>
+
+                  {/* Action buttons - solo per messaggi assistant */}
+                  {message.role === 'assistant' && (
+                    <div className="flex items-center gap-1 mt-1 px-2">
+                      <button
+                        onClick={() => handleCopyMessage(message.id, getMessageText(message as ChatMessage))}
+                        className="p-1.5 text-gray-500 hover:text-white hover:bg-gray-800 rounded transition-colors"
+                        title="Copia messaggio"
+                      >
+                        {copiedMessageId === message.id ? (
+                          <Check size={14} className="text-green-500" />
+                        ) : (
+                          <Copy size={14} />
+                        )}
+                      </button>
+                      <button
+                        onClick={() => console.log('Thumbs up:', message.id)}
+                        className="p-1.5 text-gray-500 hover:text-green-500 hover:bg-gray-800 rounded transition-colors"
+                        title="Feedback positivo"
+                      >
+                        <ThumbsUp size={14} />
+                      </button>
+                      <button
+                        onClick={() => console.log('Thumbs down:', message.id)}
+                        className="p-1.5 text-gray-500 hover:text-red-500 hover:bg-gray-800 rounded transition-colors"
+                        title="Feedback negativo"
+                      >
+                        <ThumbsDown size={14} />
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
 
-            {isLoading && (
+            {/* Mostra solo se non ci sono messaggi */}
+            {isLoading && messages.length === 0 && (
               <div className="flex justify-start mb-4">
                 <div className="max-w-xs sm:max-w-md lg:max-w-lg xl:max-w-xl px-4 py-2 rounded-2xl bg-gray-800 text-white border border-gray-700">
                   <div className="flex items-center space-x-2">
-                    <span className="text-sm font-medium opacity-60">AI </span>
                     <div className="flex space-x-1">
                       <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
                       <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>

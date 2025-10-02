@@ -32,7 +32,7 @@ export default function Home() {
           {/* CTA Button */}
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-20 sm:mb-24">
             <Link 
-              href="/register"
+              href="/login"
               className="inline-flex items-center justify-center px-12 py-4 text-lg font-semibold text-black bg-white rounded-lg hover:bg-gray-100 transition-all duration-200 min-w-[280px] sm:min-w-[320px]"
             >
               Dialoga con l&apos;Agent

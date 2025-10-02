@@ -1,16 +1,16 @@
-import { openai } from '@ai-sdk/openai';
 import { streamText, UIMessage, convertToModelMessages, stepCountIs } from 'ai';
 import { readSqlDbTool } from './tools/sql-tool';
 import { createClient } from '@/lib/supabase/server';
+import { registry, DEFAULT_MODEL, isValidModel } from '@/lib/ai/models';
 
 // Allow streaming responses up to 30 seconds
-export const maxDuration = 30;
+export const maxDuration = 60;
 
 export async function POST(req: Request) {
   const body = await req.json();
-  const { messages, sessionId }: { messages: UIMessage[]; sessionId: string } = body;
+  const { messages, sessionId, modelId }: { messages: UIMessage[]; sessionId: string; modelId?: string } = body;
 
-  console.log('🔵 [CHAT] Request:', { sessionId, messagesCount: messages?.length });
+  console.log('🔵 [CHAT] Request:', { sessionId, messagesCount: messages?.length, modelId });
 
   if (!sessionId) {
     console.error('❌ [CHAT] sessionId missing!');
@@ -67,6 +67,8 @@ export async function POST(req: Request) {
     // Usa il system prompt dal database, o un default se non presente
     let systemPrompt = agent.system_prompt || `Sei l'Agent AI dell'utente in chat con te.
 
+Rispondi sempre in markdown per migliorare la leggibilità.
+
 CONTESTO TEMPORALE CORRENTE:
 - Data di oggi (UTC): ${currentDateUTC}
 - Ora corrente (UTC): ${currentTimeUTC}
@@ -93,7 +95,10 @@ Rispondi sempre in italiano e mantieni un tono professionale ma accessibile.`;
 CONTESTO TEMPORALE CORRENTE:
 - Data di oggi (UTC): ${currentDateUTC}
 - Ora corrente (UTC): ${currentTimeUTC}
-- Timestamp completo (UTC): ${currentDateTimeUTC}`;
+- Timestamp completo (UTC): ${currentDateTimeUTC}
+
+    Usa Markdown nella risposta se valuti che possa aiutare meglio la comprensione.
+`;
     }
 
     // 3. Costruisci dinamicamente la lista di tool abilitati
@@ -119,11 +124,15 @@ CONTESTO TEMPORALE CORRENTE:
       enabledTools['read_sql_db'] = readSqlDbTool(agentId, undefined);
     }
 
+    // Seleziona il modello: usa quello richiesto se valido, altrimenti il default
+    const selectedModel = (modelId && isValidModel(modelId) ? modelId : DEFAULT_MODEL) as Parameters<typeof registry.languageModel>[0];
+    console.log('🤖 [CHAT] Using model:', selectedModel);
+
     const result = streamText({
-      model: openai('gpt-5-mini-2025-08-07'),
+      model: registry.languageModel(selectedModel),
       system: systemPrompt,
       messages: convertToModelMessages(messages),
-      stopWhen: stepCountIs(5),
+      stopWhen: stepCountIs(15),
       tools: enabledTools
     });
 
