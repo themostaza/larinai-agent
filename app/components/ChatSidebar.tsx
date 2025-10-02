@@ -30,10 +30,15 @@ export default function ChatSidebar({ currentSessionId, agentId, onSessionSelect
   const [error, setError] = useState<string | null>(null);
   const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const modelDropdownRef = useRef<HTMLDivElement>(null);
   const editInputRef = useRef<HTMLInputElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // Sidebar collassata di default su tutte le dimensioni
   useEffect(() => {
@@ -51,18 +56,26 @@ export default function ChatSidebar({ currentSessionId, agentId, onSessionSelect
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Funzione per fetchare le sessioni
-  const fetchSessions = useCallback(async () => {
+  // Funzione per fetchare le sessioni con paginazione e ricerca
+  const fetchSessions = useCallback(async (pageNum: number = 1, search: string = '', append: boolean = false) => {
     try {
-      setIsLoading(true);
+      if (!append) {
+        setIsLoading(true);
+      } else {
+        setIsLoadingMore(true);
+      }
       setError(null);
 
-      console.log('ChatSidebar: Fetching sessions for agentId:', agentId);
+      console.log('ChatSidebar: Fetching sessions - page:', pageNum, 'search:', search, 'agentId:', agentId);
       
-      // Costruisci URL con agentId come query param
-      const url = agentId 
-        ? `/api/chat/sessions?agentId=${agentId}` 
-        : '/api/chat/sessions';
+      // Costruisci URL con parametri
+      const params = new URLSearchParams();
+      if (agentId) params.append('agentId', agentId);
+      if (search.trim()) params.append('search', search.trim());
+      params.append('page', pageNum.toString());
+      params.append('limit', '50');
+      
+      const url = `/api/chat/sessions?${params.toString()}`;
       
       const response = await fetch(url);
       const result = await response.json();
@@ -72,37 +85,57 @@ export default function ChatSidebar({ currentSessionId, agentId, onSessionSelect
       }
 
       const newSessions = result.sessions || [];
-      setSessions(newSessions);
       
-      // Notifica il parent component se fornito
-      onSessionsUpdate?.(newSessions);
+      if (append) {
+        // Aggiungi alle sessioni esistenti (scroll infinito)
+        setSessions((prev) => [...prev, ...newSessions]);
+      } else {
+        // Sostituisci le sessioni (nuova ricerca o primo caricamento)
+        setSessions(newSessions);
+        // Notifica il parent component se fornito
+        onSessionsUpdate?.(newSessions);
+      }
       
-      console.log(`ChatSidebar: Successfully fetched ${newSessions.length} sessions`);
+      setHasMore(result.pagination?.hasMore || false);
+      setPage(pageNum);
+      
+      console.log(`ChatSidebar: Fetched ${newSessions.length} sessions (hasMore: ${result.pagination?.hasMore})`);
     } catch (err) {
       console.error('Error fetching chat sessions:', err);
       setError(err instanceof Error ? err.message : 'Failed to load chat sessions');
     } finally {
       setIsLoading(false);
+      setIsLoadingMore(false);
     }
   }, [agentId, onSessionsUpdate]);
 
-  // Fetch chat sessions UNA SOLA VOLTA al mount
+  // Debounce della ricerca (500ms)
   useEffect(() => {
-    fetchSessions();
-  }, [fetchSessions]);
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Fetch iniziale e quando cambia la ricerca debounced
+  useEffect(() => {
+    // Reset alla pagina 1 quando cambia la ricerca
+    fetchSessions(1, debouncedSearch, false);
+  }, [debouncedSearch, fetchSessions]);
 
   // Esponi la funzione di refresh globalmente per consentire aggiornamenti esterni
   useEffect(() => {
     const windowWithRefresh = window as Window & { refreshChatSidebar?: () => void };
     windowWithRefresh.refreshChatSidebar = () => {
       console.log('ChatSidebar: External refresh triggered');
-      fetchSessions();
+      fetchSessions(1, debouncedSearch, false);
     };
 
     return () => {
       delete windowWithRefresh.refreshChatSidebar;
     };
-  }, [fetchSessions]);
+  }, [fetchSessions, debouncedSearch]);
 
   const handleNewChat = () => {
     if (!agentId) {
@@ -152,11 +185,29 @@ export default function ChatSidebar({ currentSessionId, agentId, onSessionSelect
     });
   };
 
-  // Filtra le sessioni in base alla ricerca
-  const filteredSessions = sessions.filter((session) => {
-    if (!searchQuery.trim()) return true;
-    return session.title.toLowerCase().includes(searchQuery.toLowerCase());
-  });
+  // Funzione per caricare più risultati (scroll infinito)
+  const loadMore = useCallback(() => {
+    if (!isLoadingMore && hasMore) {
+      fetchSessions(page + 1, debouncedSearch, true);
+    }
+  }, [isLoadingMore, hasMore, page, debouncedSearch, fetchSessions]);
+
+  // Scroll listener per infinite scroll
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const handleScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = container;
+      // Carica più risultati quando si è a 100px dal fondo
+      if (scrollHeight - scrollTop - clientHeight < 100 && hasMore && !isLoadingMore) {
+        loadMore();
+      }
+    };
+
+    container.addEventListener('scroll', handleScroll);
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, [hasMore, isLoadingMore, loadMore]);
 
   // Funzione per iniziare la modifica del titolo
   const startEditing = (session: ChatSession, e: React.MouseEvent) => {
@@ -337,7 +388,7 @@ export default function ChatSidebar({ currentSessionId, agentId, onSessionSelect
                             setIsModelDropdownOpen(false);
                           }}
                           className={`w-full text-left px-3 py-2 hover:bg-gray-700 transition-colors ${
-                            selectedModel === model.id ? 'bg-gray-700 border-l-2 border-purple-500' : ''
+                            selectedModel === model.id ? 'bg-gray-700' : ''
                           }`}
                         >
                           <div className="flex items-start justify-between gap-2">
@@ -345,9 +396,6 @@ export default function ChatSidebar({ currentSessionId, agentId, onSessionSelect
                               <p className="text-sm font-medium text-white">{model.name}</p>
                               <p className="text-xs text-gray-400 mt-0.5 line-clamp-2">{model.description}</p>
                             </div>
-                            {selectedModel === model.id && (
-                              <div className="w-1.5 h-1.5 bg-purple-400 rounded-full mt-1.5 flex-shrink-0" />
-                            )}
                           </div>
                         </button>
                       ))}
@@ -422,7 +470,7 @@ export default function ChatSidebar({ currentSessionId, agentId, onSessionSelect
         </div>
 
         {/* Sessions List */}
-        <div className="flex-1 overflow-y-auto">
+        <div ref={scrollContainerRef} className="flex-1 overflow-y-auto custom-scrollbar">
           {isLoading ? (
             <div className="p-3 text-center">
               <div className="flex items-center justify-center space-x-2">
@@ -439,18 +487,19 @@ export default function ChatSidebar({ currentSessionId, agentId, onSessionSelect
           ) : sessions.length === 0 ? (
             <div className="p-3 text-center">
               <MessageCircle size={28} className="mx-auto text-gray-500 mb-1.5" />
-              <p className="text-gray-400 text-sm">Nessuna chat trovata</p>
-              <p className="text-gray-500 text-sm mt-0.5">Crea la tua prima chat!</p>
-            </div>
-          ) : filteredSessions.length === 0 ? (
-            <div className="p-3 text-center">
-              <MessageCircle size={28} className="mx-auto text-gray-500 mb-1.5" />
-              <p className="text-gray-400 text-sm">Nessun risultato</p>
-              <p className="text-gray-500 text-sm mt-0.5">Nessuna chat corrisponde alla ricerca</p>
+              <p className="text-gray-400 text-sm">
+                {searchQuery.trim() ? 'Nessun risultato' : 'Nessuna chat trovata'}
+              </p>
+              <p className="text-gray-500 text-sm mt-0.5">
+                {searchQuery.trim() 
+                  ? 'Nessuna chat corrisponde alla ricerca' 
+                  : 'Crea la tua prima chat!'}
+              </p>
             </div>
           ) : (
-            <div className="p-1.5">
-              {filteredSessions.map((session) => (
+            <>
+              <div className="p-1.5">
+                {sessions.map((session: ChatSession) => (
                 <div
                   key={session.id}
                   className={`
@@ -536,6 +585,28 @@ export default function ChatSidebar({ currentSessionId, agentId, onSessionSelect
                 </div>
               ))}
             </div>
+            
+            {/* Loading more indicator */}
+            {isLoadingMore && (
+              <div className="p-3 text-center">
+                <div className="flex items-center justify-center space-x-2">
+                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
+                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                </div>
+                <p className="text-gray-400 text-xs mt-1">Caricamento...</p>
+              </div>
+            )}
+            
+            {/* End of results indicator */}
+            {!hasMore && sessions.length > 0 && (
+              <div className="p-3 text-center">
+                <p className="text-gray-500 text-xs">
+                  {sessions.length} {sessions.length === 1 ? 'chat' : 'chat'} in totale
+                </p>
+              </div>
+            )}
+          </>
           )}
         </div>
       </div>

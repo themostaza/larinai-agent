@@ -12,11 +12,19 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get('userId');
     const agentId = searchParams.get('agentId');
+    const searchQuery = searchParams.get('search');
+    const page = parseInt(searchParams.get('page') || '1');
+    const limit = parseInt(searchParams.get('limit') || '50');
 
-    // Query per recuperare tutte le chat sessions ordinate per updated_at DESC
+    console.log(`📋 [SESSIONS] Fetching sessions - agentId: ${agentId}, search: "${searchQuery}", page: ${page}, limit: ${limit}`);
+
+    // Calcola offset per paginazione
+    const offset = (page - 1) * limit;
+
+    // Query per recuperare le chat sessions con paginazione
     let query = supabase
       .from('chat_sessions')
-      .select('id, title, created_at, updated_at, metadata')
+      .select('id, title, created_at, updated_at, metadata', { count: 'exact' })
       .order('updated_at', { ascending: false, nullsFirst: false })
       .order('created_at', { ascending: false });
 
@@ -28,10 +36,18 @@ export async function GET(request: NextRequest) {
     // Se viene fornito un agentId, filtra per quello
     if (agentId) {
       query = query.eq('agent_id', agentId);
-      console.log(`Filtering sessions for agentId: ${agentId}`);
     }
 
-    const { data: sessions, error } = await query;
+    // Se viene fornita una ricerca, filtra per titolo (case-insensitive)
+    if (searchQuery && searchQuery.trim()) {
+      query = query.ilike('title', `%${searchQuery.trim()}%`);
+      console.log(`🔍 [SESSIONS] Searching for: "${searchQuery}"`);
+    }
+
+    // Applica paginazione
+    query = query.range(offset, offset + limit - 1);
+
+    const { data: sessions, error, count } = await query;
 
     if (error) {
       console.error('Error fetching chat sessions:', error);
@@ -51,10 +67,20 @@ export async function GET(request: NextRequest) {
       metadata: session.metadata
     })) || [];
 
+    const totalCount = count || 0;
+    const hasMore = offset + formattedSessions.length < totalCount;
+
+    console.log(`📋 [SESSIONS] Returning ${formattedSessions.length} sessions (total: ${totalCount}, hasMore: ${hasMore})`);
+
     return NextResponse.json({
       success: true,
       sessions: formattedSessions,
-      total: formattedSessions.length
+      pagination: {
+        page,
+        limit,
+        total: totalCount,
+        hasMore
+      }
     });
 
   } catch (error) {
