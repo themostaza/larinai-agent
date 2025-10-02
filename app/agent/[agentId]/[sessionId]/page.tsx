@@ -172,6 +172,12 @@ export default function ChatSessionPage() {
       setMessages(result.messages);
       setLastMessageCount(result.messages.length);
       
+      // Se ci sono già 2+ messaggi user, il titolo è già stato generato
+      const userMessages = result.messages.filter((msg: ChatMessage) => msg.role === 'user');
+      if (userMessages.length >= 2) {
+        setTitleGenerated(true);
+      }
+      
       console.log(`Loaded ${result.messages.length} messages from session ${sessionId}`);
     } catch (error) {
       console.error('Error in loadChatHistory:', error);
@@ -181,6 +187,50 @@ export default function ChatSessionPage() {
   }, [sessionId, setMessages]);
 
   const [lastMessageCount, setLastMessageCount] = useState(0);
+  const [titleGenerated, setTitleGenerated] = useState(false); // Flag per evitare generazioni multiple
+
+  // Funzione per generare il titolo della chat
+  const generateChatTitle = useCallback(async () => {
+    if (titleGenerated) {
+      console.log('🤖 Titolo già generato, skip');
+      return;
+    }
+
+    try {
+      setTitleGenerated(true);
+      console.log('🤖 Chiamata a /api/chat/name/generate');
+
+      const response = await fetch('/api/chat/name/generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ sessionId }),
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        console.log(`🤖 Titolo generato: "${result.title}"`);
+        
+        // Notifica la sidebar per aggiornare la lista
+        try {
+          const windowWithRefresh = window as Window & { refreshChatSidebar?: () => void };
+          if (windowWithRefresh.refreshChatSidebar) {
+            windowWithRefresh.refreshChatSidebar();
+          }
+        } catch (err) {
+          console.log('Could not notify sidebar refresh:', err);
+        }
+      } else {
+        console.error('🤖 Errore nella generazione del titolo:', result.error);
+        setTitleGenerated(false); // Riprova in caso di errore
+      }
+    } catch (error) {
+      console.error('🤖 Errore nella chiamata a generate title:', error);
+      setTitleGenerated(false); // Riprova in caso di errore
+    }
+  }, [sessionId, titleGenerated]);
 
   useEffect(() => {
     if (sessionId && agentId) {
@@ -204,8 +254,15 @@ export default function ChatSessionPage() {
       });
       
       setLastMessageCount(messages.length);
+
+      // Genera automaticamente il titolo dopo il 2° messaggio USER
+      const userMessages = messages.filter((msg) => msg.role === 'user');
+      if (userMessages.length === 2) {
+        console.log('🤖 2 messaggi user rilevati, genero il titolo...');
+        generateChatTitle();
+      }
     }
-  }, [messages, lastMessageCount, isLoadingHistory, sessionExists, saveMessage, isLoading]);
+  }, [messages, lastMessageCount, isLoadingHistory, sessionExists, saveMessage, isLoading, generateChatTitle]);
 
   const isMessageStreaming = (message: ChatMessage): boolean => {
     if (!message.parts || !Array.isArray(message.parts)) return false;

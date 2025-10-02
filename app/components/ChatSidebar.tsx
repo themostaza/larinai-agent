@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
-import { Menu, X, Plus, MessageCircle, Sparkles, ChevronDown, ExternalLink } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Menu, X, Plus, MessageCircle, Sparkles, ChevronDown, ExternalLink, Search, Pencil, Check } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { AVAILABLE_MODELS, getModelsByProvider } from '@/lib/ai/models';
 
@@ -29,7 +29,11 @@ export default function ChatSidebar({ currentSessionId, agentId, onSessionSelect
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
+  const [editingTitle, setEditingTitle] = useState('');
   const modelDropdownRef = useRef<HTMLDivElement>(null);
+  const editInputRef = useRef<HTMLInputElement>(null);
 
   // Sidebar collassata di default su tutte le dimensioni
   useEffect(() => {
@@ -47,38 +51,58 @@ export default function ChatSidebar({ currentSessionId, agentId, onSessionSelect
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Fetch chat sessions UNA SOLA VOLTA al mount - SEMPLIFICATO
-  useEffect(() => {
-    const fetchSessions = async () => {
-      try {
-        setIsLoading(true);
-        setError(null);
+  // Funzione per fetchare le sessioni
+  const fetchSessions = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
 
-        console.log('ChatSidebar: Fetching sessions (ONCE)...');
-        const response = await fetch('/api/chat/sessions');
-        const result = await response.json();
+      console.log('ChatSidebar: Fetching sessions for agentId:', agentId);
+      
+      // Costruisci URL con agentId come query param
+      const url = agentId 
+        ? `/api/chat/sessions?agentId=${agentId}` 
+        : '/api/chat/sessions';
+      
+      const response = await fetch(url);
+      const result = await response.json();
 
-        if (!result.success) {
-          throw new Error(result.error || 'Failed to fetch sessions');
-        }
-
-        const newSessions = result.sessions || [];
-        setSessions(newSessions);
-        
-        // Notifica il parent component se fornito
-        onSessionsUpdate?.(newSessions);
-        
-        console.log(`ChatSidebar: Successfully fetched ${newSessions.length} sessions (ONCE)`);
-      } catch (err) {
-        console.error('Error fetching chat sessions:', err);
-        setError(err instanceof Error ? err.message : 'Failed to load chat sessions');
-      } finally {
-        setIsLoading(false);
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to fetch sessions');
       }
+
+      const newSessions = result.sessions || [];
+      setSessions(newSessions);
+      
+      // Notifica il parent component se fornito
+      onSessionsUpdate?.(newSessions);
+      
+      console.log(`ChatSidebar: Successfully fetched ${newSessions.length} sessions`);
+    } catch (err) {
+      console.error('Error fetching chat sessions:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load chat sessions');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [agentId, onSessionsUpdate]);
+
+  // Fetch chat sessions UNA SOLA VOLTA al mount
+  useEffect(() => {
+    fetchSessions();
+  }, [fetchSessions]);
+
+  // Esponi la funzione di refresh globalmente per consentire aggiornamenti esterni
+  useEffect(() => {
+    const windowWithRefresh = window as Window & { refreshChatSidebar?: () => void };
+    windowWithRefresh.refreshChatSidebar = () => {
+      console.log('ChatSidebar: External refresh triggered');
+      fetchSessions();
     };
 
-    fetchSessions();
-  }, []); // NESSUNA DIPENDENZA - chiamata una sola volta
+    return () => {
+      delete windowWithRefresh.refreshChatSidebar;
+    };
+  }, [fetchSessions]);
 
   const handleNewChat = () => {
     if (!agentId) {
@@ -127,6 +151,108 @@ export default function ChatSidebar({ currentSessionId, agentId, onSessionSelect
       year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
     });
   };
+
+  // Filtra le sessioni in base alla ricerca
+  const filteredSessions = sessions.filter((session) => {
+    if (!searchQuery.trim()) return true;
+    return session.title.toLowerCase().includes(searchQuery.toLowerCase());
+  });
+
+  // Funzione per iniziare la modifica del titolo
+  const startEditing = (session: ChatSession, e: React.MouseEvent) => {
+    e.stopPropagation(); // Previeni il click sulla sessione
+    setEditingSessionId(session.id);
+    setEditingTitle(session.title);
+    // Focus sull'input dopo il render
+    setTimeout(() => {
+      editInputRef.current?.focus();
+      editInputRef.current?.select();
+    }, 0);
+  };
+
+  // Funzione per salvare il nuovo titolo
+  const saveTitle = async (sessionId: string) => {
+    if (!editingTitle.trim()) {
+      // Se il titolo è vuoto, annulla la modifica
+      setEditingSessionId(null);
+      return;
+    }
+
+    try {
+      console.log(`💾 Saving new title for session ${sessionId}: "${editingTitle}"`);
+      
+      const response = await fetch('/api/chat/name', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          sessionId,
+          title: editingTitle.trim(),
+        }),
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        console.log(`💾 Title saved successfully`);
+        
+        // Aggiorna la sessione nella lista locale
+        setSessions((prevSessions) =>
+          prevSessions.map((session) =>
+            session.id === sessionId
+              ? { ...session, title: editingTitle.trim() }
+              : session
+          )
+        );
+        
+        setEditingSessionId(null);
+      } else {
+        console.error('❌ Error saving title:', result.error);
+        alert('Errore nel salvare il titolo');
+      }
+    } catch (error) {
+      console.error('❌ Error in saveTitle:', error);
+      alert('Errore nel salvare il titolo');
+    }
+  };
+
+  // Funzione per annullare la modifica
+  const cancelEditing = () => {
+    setEditingSessionId(null);
+    setEditingTitle('');
+  };
+
+  // Gestisci il click fuori dall'input per salvare
+  useEffect(() => {
+    if (!editingSessionId) return;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      
+      // Se il click è sull'input o sui bottoni di conferma/annulla, non salvare
+      if (editInputRef.current?.contains(target)) {
+        return;
+      }
+
+      // Salva quando si clicca fuori
+      if (editingTitle.trim()) {
+        saveTitle(editingSessionId);
+      } else {
+        cancelEditing();
+      }
+    };
+
+    // Aggiungi un piccolo delay per evitare che il click iniziale venga catturato
+    const timeoutId = setTimeout(() => {
+      document.addEventListener('mousedown', handleClickOutside);
+    }, 100);
+
+    return () => {
+      clearTimeout(timeoutId);
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [editingSessionId, editingTitle]);
 
   return (
     <>
@@ -252,7 +378,7 @@ export default function ChatSidebar({ currentSessionId, agentId, onSessionSelect
       `}>
         {/* Header */}
          <div className="p-3 border-b border-gray-700">
-           <div className="flex items-center justify-between">
+           <div className="flex items-center justify-between mb-3">
              <div className="flex items-center gap-2">
                <h2 className="text-base font-semibold text-white">Chat</h2>
                {/* New Chat Button - Compatto */}
@@ -271,6 +397,27 @@ export default function ChatSidebar({ currentSessionId, agentId, onSessionSelect
              >
                <X size={18} />
              </button>
+           </div>
+           
+           {/* Search Input */}
+           <div className="relative">
+             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+             <input
+               type="text"
+               value={searchQuery}
+               onChange={(e) => setSearchQuery(e.target.value)}
+               placeholder="Cerca chat..."
+               className="w-full pl-9 pr-9 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-gray-600 focus:border-gray-600"
+             />
+             {searchQuery && (
+               <button
+                 onClick={() => setSearchQuery('')}
+                 className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white transition-colors"
+                 aria-label="Pulisci ricerca"
+               >
+                 <X size={16} />
+               </button>
+             )}
            </div>
         </div>
 
@@ -295,12 +442,17 @@ export default function ChatSidebar({ currentSessionId, agentId, onSessionSelect
               <p className="text-gray-400 text-sm">Nessuna chat trovata</p>
               <p className="text-gray-500 text-sm mt-0.5">Crea la tua prima chat!</p>
             </div>
+          ) : filteredSessions.length === 0 ? (
+            <div className="p-3 text-center">
+              <MessageCircle size={28} className="mx-auto text-gray-500 mb-1.5" />
+              <p className="text-gray-400 text-sm">Nessun risultato</p>
+              <p className="text-gray-500 text-sm mt-0.5">Nessuna chat corrisponde alla ricerca</p>
+            </div>
           ) : (
             <div className="p-1.5">
-              {sessions.map((session) => (
-                <button
+              {filteredSessions.map((session) => (
+                <div
                   key={session.id}
-                  onClick={() => handleSessionClick(session.id)}
                   className={`
                     w-full text-left px-2.5 py-2 rounded-lg mb-1 transition-colors
                     ${session.id === currentSessionId 
@@ -309,20 +461,79 @@ export default function ChatSidebar({ currentSessionId, agentId, onSessionSelect
                     }
                   `}
                 >
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1 min-w-0">
-                      <p className={`
-                        text-sm font-medium truncate
-                        ${session.id === currentSessionId ? 'text-white' : 'text-gray-200'}
-                      `}>
-                        {session.title}
-                      </p>
-                      <p className="text-xs text-gray-400 mt-0.5">
-                        {formatDate(session.updatedAt || session.createdAt)}
-                      </p>
+                  <div className="flex items-start justify-between gap-2">
+                    <div 
+                      className="flex-1 min-w-0 cursor-pointer"
+                      onClick={() => handleSessionClick(session.id)}
+                    >
+                      {editingSessionId === session.id ? (
+                        // Modalità editing
+                        <div className="flex items-center gap-1">
+                          <input
+                            ref={editInputRef}
+                            type="text"
+                            value={editingTitle}
+                            onChange={(e) => setEditingTitle(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                saveTitle(session.id);
+                              } else if (e.key === 'Escape') {
+                                cancelEditing();
+                              }
+                            }}
+                            className="flex-1 px-2 py-1 bg-gray-800 border border-gray-600 rounded text-sm text-white focus:outline-none focus:ring-1 focus:ring-gray-500"
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              saveTitle(session.id);
+                            }}
+                            className="p-1 text-green-400 hover:text-green-300 transition-colors flex-shrink-0"
+                            title="Salva"
+                          >
+                            <Check size={14} />
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              cancelEditing();
+                            }}
+                            className="p-1 text-gray-400 hover:text-white transition-colors flex-shrink-0"
+                            title="Annulla"
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
+                      ) : (
+                        // Modalità visualizzazione
+                        <>
+                          <p className={`
+                            text-sm font-medium truncate
+                            ${session.id === currentSessionId ? 'text-white' : 'text-gray-200'}
+                          `}>
+                            {session.title}
+                          </p>
+                          <p className="text-xs text-gray-400 mt-0.5">
+                            {formatDate(session.updatedAt || session.createdAt)}
+                          </p>
+                        </>
+                      )}
                     </div>
+                    
+                    {/* Icona Modifica - sempre visibile su mobile */}
+                    {editingSessionId !== session.id && (
+                      <button
+                        onClick={(e) => startEditing(session, e)}
+                        className="p-1 text-gray-400 hover:text-white transition-colors flex-shrink-0"
+                        title="Modifica titolo"
+                        aria-label="Modifica titolo"
+                      >
+                        <Pencil size={14} />
+                      </button>
+                    )}
                   </div>
-                </button>
+                </div>
               ))}
             </div>
           )}

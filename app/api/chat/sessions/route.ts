@@ -11,6 +11,7 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get('userId');
+    const agentId = searchParams.get('agentId');
 
     // Query per recuperare tutte le chat sessions ordinate per updated_at DESC
     let query = supabase
@@ -22,6 +23,12 @@ export async function GET(request: NextRequest) {
     // Se viene fornito un userId, filtra per quello
     if (userId) {
       query = query.eq('user_id', userId);
+    }
+
+    // Se viene fornito un agentId, filtra per quello
+    if (agentId) {
+      query = query.eq('agent_id', agentId);
+      console.log(`Filtering sessions for agentId: ${agentId}`);
     }
 
     const { data: sessions, error } = await query;
