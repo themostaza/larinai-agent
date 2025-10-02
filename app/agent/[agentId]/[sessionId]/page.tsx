@@ -39,7 +39,7 @@ export default function ChatSessionPage() {
   const [selectedModel, setSelectedModel] = useState<string>(DEFAULT_MODEL);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   
-  console.log('🟢 [CLIENT] agentId:', agentId, 'sessionId:', sessionId);
+  //console.log('🟢 [CLIENT] agentId:', agentId, 'sessionId:', sessionId);
   
   // Carica il modello selezionato da localStorage al mount
   useEffect(() => {

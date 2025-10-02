@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { LogOut, UserPlus, Loader2, Bot, Settings, X, AlertCircle } from 'lucide-react';
+import { LogOut, UserPlus, Loader2, Bot, Settings, X, AlertCircle, BarChart3 } from 'lucide-react';
 
 interface Organization {
   id: string;
@@ -281,16 +281,27 @@ export default function BackOfficePage() {
                     className="bg-gray-900 border border-gray-800 rounded-lg p-6 hover:border-gray-700 transition-colors group"
                   >
                     <div className="flex items-start justify-between mb-4">
-                      <div className="p-3 bg-gray-800 rounded-lg">
-                        <Bot size={24} className="text-white" />
+                      <div className="w-12 h-12 bg-gray-800 rounded-lg flex items-center justify-center">
+                        <span className="text-2xl font-bold text-white">
+                          {(agent.name || 'A')[0].toUpperCase()}
+                        </span>
                       </div>
-                      <button
-                        onClick={() => router.push(`/agent/${agent.id}/edit`)}
-                        className="p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
-                        title="Modifica agent"
-                      >
-                        <Settings size={18} />
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => router.push(`/agent/${agent.id}/board`)}
+                          className="p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors"
+                          title="Dashboard agent"
+                        >
+                          <BarChart3 size={18} />
+                        </button>
+                        <button
+                          onClick={() => router.push(`/agent/${agent.id}/edit`)}
+                          className="p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors"
+                          title="Modifica agent"
+                        >
+                          <Settings size={18} />
+                        </button>
+                      </div>
                     </div>
                     
                     <h3 className="text-lg font-semibold mb-2">

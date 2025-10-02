@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Menu, X, Plus, MessageCircle, Sparkles, ChevronDown, ExternalLink, Search, Pencil, Check } from 'lucide-react';
+import { Menu, X, Plus, MessageCircle, Sparkles, ChevronDown, ExternalLink, Search, Pencil, Check, Home } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { AVAILABLE_MODELS, getModelsByProvider } from '@/lib/ai/models';
 
@@ -145,6 +145,13 @@ export default function ChatSidebar({ currentSessionId, agentId, onSessionSelect
     }
     const newSessionId = uuidv4();
     const newTab = window.open(`/agent/${agentId}/${newSessionId}`, '_blank');
+    if (newTab) {
+      newTab.focus();
+    }
+  };
+
+  const handleHome = () => {
+    const newTab = window.open('/back', '_blank');
     if (newTab) {
       newTab.focus();
     }
@@ -345,6 +352,18 @@ export default function ChatSidebar({ currentSessionId, agentId, onSessionSelect
             </span>
           </button>
           
+          {/* Home Button */}
+          <button
+            onClick={handleHome}
+            className="group flex items-center p-2 bg-gray-800 text-white rounded-lg border border-gray-700 hover:bg-gray-700 transition-all duration-300 overflow-hidden"
+            aria-label="Home"
+          >
+            <Home size={20} className="flex-shrink-0" />
+            <span className="whitespace-nowrap text-sm font-medium opacity-0 group-hover:opacity-100 max-w-0 group-hover:max-w-xs group-hover:ml-2 transition-all duration-300">
+              Home
+            </span>
+          </button>
+          
           {/* Nuova Chat Button */}
           <button
             onClick={handleNewChat}
@@ -428,14 +447,21 @@ export default function ChatSidebar({ currentSessionId, agentId, onSessionSelect
          <div className="p-3 border-b border-gray-700">
            <div className="flex items-center justify-between mb-3">
              <div className="flex items-center gap-2">
-               <h2 className="text-base font-semibold text-white">Chat</h2>
+               {/* Home Button - Compatto */}
+               <button
+                 onClick={handleHome}
+                 className="p-1.5 bg-gray-800 text-white border border-gray-700 rounded hover:bg-gray-700 transition-colors"
+                 title="Home (nuova tab)"
+               >
+                 <Home size={14} />
+               </button>
                {/* New Chat Button - Compatto */}
                <button
                  onClick={handleNewChat}
                  className="p-1.5 bg-gray-800 text-white border border-gray-700 rounded hover:bg-gray-700 transition-colors"
                  title="Nuova chat (nuova tab)"
                >
-                 <ExternalLink size={14} />
+                 <Plus size={14} />
                </button>
              </div>
              <button
@@ -454,7 +480,7 @@ export default function ChatSidebar({ currentSessionId, agentId, onSessionSelect
                type="text"
                value={searchQuery}
                onChange={(e) => setSearchQuery(e.target.value)}
-               placeholder="Cerca chat..."
+               placeholder="cerca..."
                className="w-full pl-9 pr-9 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-gray-600 focus:border-gray-600"
              />
              {searchQuery && (
