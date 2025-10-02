@@ -1,13 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, memo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { Copy, Check } from 'lucide-react';
 
-interface MarkdownMessageProps {
+export interface MarkdownMessageProps {
   content: string;
 }
 
@@ -50,7 +50,7 @@ function CodeBlock({ language, children }: { language: string; children: string 
   );
 }
 
-export default function MarkdownMessage({ content }: MarkdownMessageProps) {
+function MarkdownMessage({ content }: MarkdownMessageProps) {
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
@@ -168,4 +168,7 @@ export default function MarkdownMessage({ content }: MarkdownMessageProps) {
     </ReactMarkdown>
   );
 }
+
+// Usa memo per evitare re-render inutili
+export default memo(MarkdownMessage) as React.FC<MarkdownMessageProps>;
 

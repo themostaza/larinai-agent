@@ -382,11 +382,16 @@ export default function ChatSessionPage() {
                               <div key={`${message.id}-${i}`} className="prose prose-invert prose-sm max-w-none">
                                 {message.role === 'assistant' ? (
                                   <>
-                                    <MarkdownMessage content={part.text || ''} />
-                                    {isMessageGenerating(message.id) && (
-                                      <span className="inline-flex items-center ml-1 align-middle">
-                                        <Loader2 size={16} className="animate-spin text-gray-400" />
-                                      </span>
+                                    {/* Durante streaming mostra testo plain, poi markdown */}
+                                    {isMessageGenerating(message.id) ? (
+                                      <p className="whitespace-pre-wrap">
+                                        {part.text}
+                                        <span className="inline-flex items-center ml-2 align-middle">
+                                          <Loader2 size={16} className="animate-spin text-gray-400" />
+                                        </span>
+                                      </p>
+                                    ) : (
+                                      <MarkdownMessage content={part.text || ''} />
                                     )}
                                   </>
                                 ) : (
