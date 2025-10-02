@@ -306,6 +306,7 @@ export default function ChatSessionPage() {
   return (
     <>
       <style jsx global>{`
+        /* Scrollbar per textarea */
         textarea {
           scrollbar-width: none;
           scrollbar-color: transparent transparent;
@@ -346,6 +347,29 @@ export default function ChatSessionPage() {
           scrollbar-width: thin;
           scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
         }
+
+        /* Scrollbar per chat - sfondo trasparente */
+        .chat-container {
+          scrollbar-width: thin;
+          scrollbar-color: rgb(75 85 99) transparent;
+        }
+        
+        .chat-container::-webkit-scrollbar {
+          width: 6px;
+        }
+        
+        .chat-container::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        
+        .chat-container::-webkit-scrollbar-thumb {
+          background-color: rgb(75 85 99);
+          border-radius: 3px;
+        }
+        
+        .chat-container::-webkit-scrollbar-thumb:hover {
+          background-color: rgb(107 114 128);
+        }
       `}</style>
       <div className="min-h-screen bg-black text-white flex relative">
         <ChatSidebar 
@@ -359,7 +383,7 @@ export default function ChatSessionPage() {
         />
         
         <div className="flex-1 flex flex-col min-h-screen">
-          <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 space-y-4 pb-32 sm:pb-40">
+          <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 space-y-4 pb-32 sm:pb-40 chat-container">
             <div className="max-w-4xl mx-auto w-full">
             {messages.map((message) => (
               <div

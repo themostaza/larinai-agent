@@ -24,3 +24,31 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Custom Scrollbar - Transparent Background */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(75 85 99) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: rgb(75 85 99);
+  border-radius: 3px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: rgb(107 114 128);
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
