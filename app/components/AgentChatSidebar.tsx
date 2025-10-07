@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Send } from 'lucide-react';
+import { Send, ChevronDown } from 'lucide-react';
+import { AVAILABLE_MODELS, DEFAULT_MODEL, getModelsByProvider } from '@/lib/ai/models';
 
 interface Message {
   id: string;
@@ -23,15 +24,43 @@ interface AgentChatSidebarProps {
     queryId: string;
     chatMessageId?: string;
   };
+  onChartsUpdated?: () => void; // Callback per ricaricare i grafici
 }
 
-export default function AgentChatSidebar({ isOpen, onWidthChange, queryContext }: AgentChatSidebarProps) {
+export default function AgentChatSidebar({ isOpen, onWidthChange, queryContext, onChartsUpdated }: AgentChatSidebarProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
+  const [selectedModel, setSelectedModel] = useState<string>(DEFAULT_MODEL);
+  const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const modelDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Carica il modello selezionato da localStorage al mount
+  useEffect(() => {
+    const savedModel = localStorage.getItem('selectedChartAIModel');
+    if (savedModel && AVAILABLE_MODELS.some(m => m.id === savedModel)) {
+      setSelectedModel(savedModel);
+    }
+  }, []);
+
+  // Salva il modello selezionato in localStorage quando cambia
+  useEffect(() => {
+    localStorage.setItem('selectedChartAIModel', selectedModel);
+  }, [selectedModel]);
+
+  // Chiudi dropdown quando clicchi fuori
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (modelDropdownRef.current && !modelDropdownRef.current.contains(event.target as Node)) {
+        setIsModelDropdownOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // Auto-scroll to bottom when new messages are added
   useEffect(() => {
@@ -87,7 +116,7 @@ export default function AgentChatSidebar({ isOpen, onWidthChange, queryContext }
       const contextMessage: Message = {
         id: 'context-' + Date.now(),
         role: 'assistant',
-        content: `Ciao! Sono il tuo Agent AI. Ho accesso al contesto della tua query:\n\n**Database:** ${queryContext.database}\n**Scopo:** ${queryContext.purpose}\n\nCome posso aiutarti ad analizzare o approfondire questi dati?`,
+        content: `Ciao! Ti supporto con l'analisi dei dati. Ho accesso al contesto:\n\nDatabase: ${queryContext.database}\nScopo: ${queryContext.purpose}\n\nCome posso aiutarti?`,
         timestamp: new Date()
       };
       setMessages([contextMessage]);
@@ -121,7 +150,8 @@ export default function AgentChatSidebar({ isOpen, onWidthChange, queryContext }
             role: msg.role,
             content: msg.content
           })),
-          queryContext
+          queryContext,
+          modelId: selectedModel
         })
       });
 
@@ -146,6 +176,7 @@ export default function AgentChatSidebar({ isOpen, onWidthChange, queryContext }
 
       const decoder = new TextDecoder();
       let buffer = '';
+      let toolExecuted = false;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -156,11 +187,32 @@ export default function AgentChatSidebar({ isOpen, onWidthChange, queryContext }
         buffer = lines.pop() || '';
 
         for (const line of lines) {
-          if (line.startsWith('0:')) {
-            try {
-              const jsonStr = line.slice(2);
-              const data = JSON.parse(jsonStr);
-              if (data.content) {
+          if (!line.trim() || line.trim() === '') continue;
+          
+          try {
+            // Il formato è "X:JSON" dove X è il tipo di messaggio
+            const colonIndex = line.indexOf(':');
+            if (colonIndex === -1) continue;
+            
+            const prefix = line.slice(0, colonIndex);
+            const jsonStr = line.slice(colonIndex + 1);
+            
+            if (!jsonStr.trim()) continue;
+            
+            const data = JSON.parse(jsonStr);
+            
+            // Gestisci diversi tipi di messaggi
+            if (prefix === '0' || prefix === '2') {
+              // Text delta o text done
+              if (data.type === 'text-delta' && data.textDelta) {
+                assistantMessage.content += data.textDelta;
+                setMessages(prev => prev.map(msg => 
+                  msg.id === assistantMessage.id 
+                    ? { ...msg, content: assistantMessage.content }
+                    : msg
+                ));
+              } else if (data.content) {
+                // Fallback per formato vecchio
                 assistantMessage.content += data.content;
                 setMessages(prev => prev.map(msg => 
                   msg.id === assistantMessage.id 
@@ -168,14 +220,37 @@ export default function AgentChatSidebar({ isOpen, onWidthChange, queryContext }
                     : msg
                 ));
               }
-            } catch {
-              // Ignore parsing errors
+            } else if (prefix === '9' || prefix === 'd') {
+              // Tool result
+              console.log('🔧 [CHAT] Tool event detected:', data);
+              if ((data.toolName === 'create_chart' || data.toolCallId) && (data.result?.success || data.type === 'tool-result')) {
+                console.log('✅ [CHAT] Tool create_chart executed successfully');
+                toolExecuted = true;
+              }
             }
+          } catch (e) {
+            // Ignora errori di parsing
+            console.debug('Parse error:', e);
           }
         }
       }
 
       setIsLoading(false);
+      
+      // Se il tool è stato eseguito, ricarica i grafici
+      if (toolExecuted) {
+        console.log('🔄 [CHAT] Tool executed, reloading charts...');
+        if (onChartsUpdated) {
+          setTimeout(() => {
+            console.log('🔄 [CHAT] Calling onChartsUpdated callback');
+            onChartsUpdated();
+          }, 1000); // 1 secondo di delay per dare tempo al DB
+        } else {
+          console.warn('⚠️ [CHAT] onChartsUpdated callback not provided');
+        }
+      } else {
+        console.log('ℹ️ [CHAT] No tool executed, skipping chart reload');
+      }
     } catch (error) {
       console.error('Error sending message to agent:', error);
       const errorMessage: Message = {
@@ -272,7 +347,6 @@ export default function AgentChatSidebar({ isOpen, onWidthChange, queryContext }
                   <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
                   <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
                 </div>
-                <span className="text-gray-400 text-sm">Sto pensando...</span>
               </div>
             </div>
           </div>
@@ -304,8 +378,47 @@ export default function AgentChatSidebar({ isOpen, onWidthChange, queryContext }
           </button>
         </div>
         
-        <div className="mt-2 text-xs text-gray-500 text-center">
-          Invio per inviare • Shift+Invio per andare a capo
+        {/* Model Selector */}
+        <div className="mt-2 relative w-fit" ref={modelDropdownRef}>
+          <button
+            onClick={() => setIsModelDropdownOpen(!isModelDropdownOpen)}
+            className="w-full flex items-center justify-between px-2 py-1 bg-gray-800 border border-gray-700 rounded text-xs text-gray-400 hover:text-gray-300 hover:border-gray-600 transition-colors"
+          >
+            <span className="truncate">
+              {AVAILABLE_MODELS.find(m => m.id === selectedModel)?.name || 'Seleziona modello'}
+            </span>
+            <ChevronDown size={12} className={`ml-1 flex-shrink-0 transition-transform ${isModelDropdownOpen ? 'rotate-180' : ''}`} />
+          </button>
+
+          {/* Dropdown Menu */}
+          {isModelDropdownOpen && (
+            <div className="absolute bottom-full left-0 right-0 mb-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl max-h-64 overflow-y-auto z-50">
+              {Object.entries(getModelsByProvider()).map(([provider, models]) => (
+                models.length > 0 && (
+                  <div key={provider}>
+                    <div className="px-3 py-2 text-xs font-semibold text-gray-500 border-b border-gray-700">
+                      {provider}
+                    </div>
+                    {models.map((model) => (
+                      <button
+                        key={model.id}
+                        onClick={() => {
+                          setSelectedModel(model.id);
+                          setIsModelDropdownOpen(false);
+                        }}
+                        className={`w-full px-3 py-2 text-left text-xs hover:bg-gray-700 transition-colors ${
+                          selectedModel === model.id ? 'bg-gray-700 text-white' : 'text-gray-300'
+                        }`}
+                      >
+                        <div className="font-medium">{model.name}</div>
+                        <div className="text-gray-500 text-[10px] mt-0.5">{model.description}</div>
+                      </button>
+                    ))}
+                  </div>
+                )
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

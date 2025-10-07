@@ -60,6 +60,7 @@ interface QueryRequest {
   database?: string;
   query: string;
   purpose?: string;
+  aiLimit?: number; // Limite per i dati passati all'AI (default: 50)
 }
 
 // Funzione per validare la query SQL
@@ -168,14 +169,17 @@ export async function POST(request: NextRequest) {
   
   try {
     const body: QueryRequest = await request.json();
-    const { agentId, database, query, purpose } = body;
+    const { agentId, database, query, purpose, aiLimit } = body;
+    
+    // Default aiLimit = 50, usa -1 per nessun limite
+    const appliedLimit = aiLimit !== undefined ? aiLimit : 50;
 
     // Validazione input
     if (!query || typeof query !== 'string') {
       return NextResponse.json(
         { 
           success: false, 
-          error: 'Query SQL richiesta' 
+          error: 'Query SQL o PostgreSQL richiesta' 
         },
         { status: 400 }
       );
@@ -208,59 +212,87 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Esecuzione della query
-    let results;
     const executionStart = Date.now();
 
     // Determina il tipo di database dalla configurazione dell'agent
     const dbType = agentDbConfig.type || 'mssql';
     
+    // Costruisci la configurazione SQL Server (se necessario)
+    const sqlServerConfig: sql.config = {
+      server: agentDbConfig.server!,
+      port: agentDbConfig.port || 1433,
+      database: database || agentDbConfig.database || 'DWH',
+      user: agentDbConfig.user!,
+      password: agentDbConfig.password!,
+      options: {
+        encrypt: agentDbConfig.encrypt !== false,
+        trustServerCertificate: agentDbConfig.trustServerCertificate !== false,
+        enableArithAbort: agentDbConfig.enableArithAbort !== false,
+        requestTimeout: agentDbConfig.requestTimeout || 30000
+      },
+      pool: {
+        max: 10,
+        min: 0,
+        idleTimeoutMillis: 30000
+      }
+    };
+
+    // Approccio semplice: esegui query COMPLETA, poi limita i dati per l'AI
+    let allResults;
+    
+    // Esegui la query originale SENZA modifiche
     if (dbType === 'postgresql') {
-      results = await executePostgreSQL(query, agentDbConfig, database);
+      allResults = await executePostgreSQL(query, agentDbConfig, database);
     } else {
-      // Costruisci la configurazione SQL Server
-      const sqlServerConfig: sql.config = {
-        server: agentDbConfig.server!,
-        port: agentDbConfig.port || 1433,
-        database: database || agentDbConfig.database || 'DWH',
-        user: agentDbConfig.user!,
-        password: agentDbConfig.password!,
-        options: {
-          encrypt: agentDbConfig.encrypt !== false,
-          trustServerCertificate: agentDbConfig.trustServerCertificate !== false,
-          enableArithAbort: agentDbConfig.enableArithAbort !== false,
-          requestTimeout: agentDbConfig.requestTimeout || 30000
-        },
-        pool: {
-          max: 10,
-          min: 0,
-          idleTimeoutMillis: 30000
-        }
-      };
-      results = await executeSQLServer(query, sqlServerConfig, database);
+      allResults = await executeSQLServer(query, sqlServerConfig, database);
     }
+
+    // Calcola totalCount dai risultati completi
+    const totalCount = Array.isArray(allResults) ? allResults.length : 0;
+    
+    // Limita i risultati per l'AI solo se aiLimit è specificato e > 0
+    let results;
+    if (appliedLimit > 0 && appliedLimit < totalCount) {
+      // Prendi solo i primi aiLimit record per l'AI
+      results = allResults.slice(0, appliedLimit);
+    } else {
+      // Passa tutti i risultati all'AI
+      results = allResults;
+    }
+    
+    const returnedCount = Array.isArray(results) ? results.length : 0;
 
     const executionTime = Date.now() - executionStart;
     const totalTime = Date.now() - startTime;
 
-    // Limita i risultati per evitare risposte troppo grandi
-    const maxResults = 1000;
-    const limitedResults = Array.isArray(results) && results.length > maxResults 
-      ? results.slice(0, maxResults)
-      : results;
+    // Genera automaticamente queryResultStructure (schema delle colonne)
+    let queryResultStructure = null;
+    if (Array.isArray(results) && results.length > 0) {
+      const firstRow = results[0] as Record<string, unknown>;
+      queryResultStructure = Object.keys(firstRow).map(columnName => ({
+        name: columnName,
+        type: typeof firstRow[columnName],
+        // Aggiungi valori di esempio dai primi 3 record (se disponibili)
+        sampleValues: results.slice(0, Math.min(3, results.length)).map(row => 
+          (row as Record<string, unknown>)[columnName]
+        )
+      }));
+    }
 
     const response = {
       success: true,
       data: {
-        results: limitedResults,
-        rowCount: Array.isArray(results) ? results.length : 0,
+        results,                // Dati limitati per l'AI
+        totalCount,             // Conteggio TOTALE nel DB (automatico da window function)
+        returnedCount,          // Quanti record effettivamente restituiti (automatico)
+        queryResultStructure,   // Schema delle colonne con esempi (automatico)
         executionTime: `${executionTime}ms`,
         totalTime: `${totalTime}ms`,
         database: database || agentDbConfig.database,
-        query,
+        query,                  // Query originale SENZA LIMIT (per ri-esecuzione)
         purpose,
         queryType: validation.type,
-        truncated: Array.isArray(results) && results.length > maxResults
+        aiLimitApplied: appliedLimit > 0 && appliedLimit < totalCount // Flag se limitato
       }
     };
 

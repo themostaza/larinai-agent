@@ -16,19 +16,51 @@ interface SqlToolConfig {
 
 export const readSqlDbTool = (agentId: string, config?: unknown) => {
   const toolConfig = config as SqlToolConfig | undefined;
+  
+  // Ottieni il tipo di database dalla configurazione
+  const dbType = toolConfig?.database?.type || 'mssql';
+
+  
   const description = toolConfig?.description || `
-  Esegui query SQL sui database aziendali per ottenere dati per l'utente e aiutare nella comprensione.
-  Puoi esplorare lo schema del database per ottenere informazioni sui dati disponibili e sulla struttura delle tabelle
-  `;
+Esegui query SQL su database. tipologia database in uso: ${dbType}
+Abbiamo introdotto un nuovo parametro 'aiLimit' per limitare il numero di record che puoi vedere dalla query anche se la query include molti più record.
+Per evitare saturazione della finestra di contesto, limita sempre il numero di record che ricevi specificando il parametro 'aiLimit'.
+parametro 'aiLimit' (opzionale, default 10 se non lo specifichi):
+   - Definisce QUANTI record MASSIMO vuoi leggere dalla query
+   - NON modifica la query SQL, ma limita i dati che ricevi e che puoi leggere
+   - Valori raccomandati:
+     • 10-20: Esplorazione rapida (default: 10)
+     • 20-50: Analisi standard
+     • -1: TUTTI i dati (⚠️ usa con cautela per evitare saturazione della finestra di contesto!)
+
+ COSA RICEVI dall'esecuzione (TUTTO AUTOMATICO):
+  {
+    totalCount: 8500,                  // ← Totale record nel DB (calcolato automaticamente)
+    returnedCount: 10,                 // ← Record che hai ricevuto (automatico)
+    results: [...],                    // ← Array con i record che hai ricevuto
+    queryResultStructure: [            // ← Schema colonne (generato automaticamente)
+      { name: "id", type: "number", sampleValues: [1, 2, 3] },
+      { name: "nome", type: "string", sampleValues: ["Mario", "Luigi", "Peach"] }
+    ],
+    aiLimitApplied: true               // ← Flag se è stato applicato un limite
+  }
+  
+  IMPORTANTE: totalCount, returnedCount e queryResultStructure sono AUTOMATICI.
+  Il sistema esegue la query completa, conta i risultati, e poi limita i dati che puoi vedere in funzione del parametro 'aiLimit'.
+  Non serve fare COUNT separato o modificare la query - tutto gestito automaticamente!
+  Sii efficiente nel numero di query da eseguire per rispondere all'utente.
+
+  Esempio: se ti chiedono di restituire tutti i dati della tabella 'ordini', la query SQL da eseguire sarà: "SELECT * FROM ordini" perché il totale lo calcoliamo in automatico così come la struttura delle colonne. `;
 
   return tool({
     description,
     inputSchema: z.object({
       database: z.string().optional().describe('Il nome del database su cui eseguire la query (opzionale, usa il default se non specificato)'),
-      query: z.string().describe('La query SQL da eseguire (SELECT, JOIN, WHERE, GROUP BY, etc.)'),
-      purpose: z.string().describe('Breve descrizione della della query')
+      query: z.string().describe('La query SQL da eseguire.'),
+      purpose: z.string().describe('Breve descrizione dello scopo della query'),
+      aiLimit: z.number().optional().describe('Quanti record MASSIMO vuoi ricevere per la tua lettura.')
     }),
-    execute: async ({ database, query, purpose }) => {
+    execute: async ({ database, query, purpose, aiLimit }) => {
     
     try {
       const baseUrl = process.env.NEXTAUTH_URL || process.env.VERCEL_URL || 'http://localhost:3000';
@@ -43,7 +75,8 @@ export const readSqlDbTool = (agentId: string, config?: unknown) => {
           agentId,
           database,
           query,
-          purpose
+          purpose,
+          aiLimit: aiLimit || 10  // Default automatico: 10 se non specificato
         })
       });
 
@@ -79,11 +112,13 @@ export const readSqlDbTool = (agentId: string, config?: unknown) => {
         database: result.data.database,
         query: result.data.query,
         purpose: result.data.purpose,
-        results: result.data.results,
-        rowCount: result.data.rowCount,
+        results: result.data.results,                        // Dati limitati per l'AI
+        totalCount: result.data.totalCount,                  // Conteggio TOTALE nel DB (automatico)
+        returnedCount: result.data.returnedCount,            // Quanti record restituiti (automatico)
+        queryResultStructure: result.data.queryResultStructure, // Schema colonne (automatico)
         executionTime: result.data.executionTime,
         queryType: result.data.queryType,
-        truncated: result.data.truncated,
+        aiLimitApplied: result.data.aiLimitApplied,          // Se è stato applicato un limite
         success: true
       };
 

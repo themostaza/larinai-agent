@@ -90,6 +90,68 @@ function hasUsefulContent(message: SaveMessageRequest['message']): boolean {
 }
 
 
+// Funzione per processare le parti del messaggio e rimuovere i dati completi
+function processMessageParts(parts: MessagePart[]): MessagePart[] {
+  return parts.map(part => {
+    // Se è una part di tipo tool (inizia con 'tool-'), rimuovi SEMPRE i dati
+    if (part.type && part.type.startsWith('tool-')) {
+      console.log(`🔍 Processing tool part: ${part.type}`, {
+        hasResult: !!part.result,
+        hasOutput: !!part.output,
+        hasInput: !!part.input,
+        hasArgs: !!part.args
+      });
+      
+      // Funzione helper per pulire un oggetto rimuovendo results (dati pesanti)
+      const cleanDataObject = (obj: Record<string, unknown>) => {
+        const cleaned = { ...obj };
+        
+        // Rimuovi array results se presente (dati pesanti!)
+        if (cleaned.results && Array.isArray(cleaned.results)) {
+          const resultsCount = cleaned.results.length;
+          console.log(`✂️  Removing ${resultsCount} data rows from ${part.type}, keeping metadata + structure`);
+          cleaned.results = [];
+          cleaned.dataRemoved = true;
+          cleaned.originalRowCount = resultsCount;
+        }
+        
+        // Rimuovi solo schema (se presente), ma MANTIENI queryResultStructure
+        delete cleaned.schema;
+        // queryResultStructure viene MANTENUTO - contiene solo metadati delle colonne (leggero e utile)
+        
+        return cleaned;
+      };
+      
+      // Pulisci tutti i possibili campi che potrebbero contenere dati
+      let cleanedResult = part.result;
+      if (part.result && typeof part.result === 'object') {
+        cleanedResult = cleanDataObject(part.result as Record<string, unknown>);
+      }
+      
+      let cleanedOutput = part.output;
+      if (part.output && typeof part.output === 'object') {
+        cleanedOutput = cleanDataObject(part.output as Record<string, unknown>);
+      }
+      
+      // Input e args di solito non contengono dati, ma controlliamo comunque
+      const cleanedInput = part.input;
+      const cleanedArgs = part.args;
+      
+      // Ritorna la part pulita
+      return {
+        ...part,
+        result: cleanedResult,
+        output: cleanedOutput,
+        input: cleanedInput,
+        args: cleanedArgs
+      };
+    }
+    
+    // Per gli altri tipi di parti, restituiscili invariati
+    return part;
+  });
+}
+
 // Funzione per salvare un singolo messaggio
 async function saveMessage(sessionId: string, message: SaveMessageRequest['message']) {
   // Controlla se il messaggio è già stato salvato
@@ -104,30 +166,18 @@ async function saveMessage(sessionId: string, message: SaveMessageRequest['messa
     return { success: true, action: 'skipped' };
   }
 
-  // Prepara il contenuto completo del messaggio
-  const completeMessageContent = {
-    id: message.id,
-    role: message.role,
-    parts: message.parts || [],
-    metadata: message.metadata || {},
-    createdAt: message.createdAt || new Date().toISOString(),
-    // Aggiungi qualsiasi altro campo presente nel messaggio
-    ...Object.fromEntries(
-      Object.entries(message).filter(([key]) => 
-        !['id', 'role', 'parts', 'metadata', 'createdAt'].includes(key)
-      )
-    )
-  };
+  // Processa le parti per rimuovere i dati completi
+  const processedParts = processMessageParts(message.parts || []);
 
-  // Salva il messaggio
+  // Salva il messaggio SOLO con parts processate (senza dati)
   const { data, error } = await supabase
     .from('chat_messages')
     .insert({
       session_id: sessionId,
       message_id: message.id,
       role: message.role,
-      parts: (message.parts || []) as never,
-      message_content: completeMessageContent as never
+      parts: processedParts as never,
+      created_at: message.createdAt || new Date().toISOString()
     })
     .select();
 

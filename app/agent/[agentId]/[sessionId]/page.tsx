@@ -2,11 +2,11 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useChat } from '@ai-sdk/react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import DatabaseQueryButton from '../../../components/DatabaseQueryButton';
 import ChatSidebar from '../../../components/ChatSidebar';
 import MarkdownMessage from '../../../components/MarkdownMessage';
-import { AVAILABLE_MODELS, DEFAULT_MODEL, getModelsByProvider } from '@/lib/ai/models';
+import { AVAILABLE_MODELS, DEFAULT_MODEL } from '@/lib/ai/models';
 import { Copy, ThumbsUp, ThumbsDown, Check, Loader2 } from 'lucide-react';
 
 interface MessagePart {

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Menu, X, Plus, MessageCircle, Sparkles, ChevronDown, ExternalLink, Search, Pencil, Check, Home } from 'lucide-react';
+import { Menu, X, Plus, MessageCircle, Sparkles, ChevronDown, Search, Pencil, Check, Home } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { AVAILABLE_MODELS, getModelsByProvider } from '@/lib/ai/models';
 

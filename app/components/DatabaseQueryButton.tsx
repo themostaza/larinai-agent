@@ -67,7 +67,11 @@ export default function DatabaseQueryButton({ part, messageId, partIndex }: Data
                 <span className="text-red-400">❌ Errore</span>
               ) : (
                 <span className="text-green-400">
-                  ✓ {result?.rowCount || 0} righe • {result?.executionTime || 'N/A'}
+                  ✓ {result?.totalCount || 0} totali
+                  {result?.aiLimitApplied && result?.returnedCount && (
+                    <span className="text-gray-400"> ({result.returnedCount} analizzati)</span>
+                  )}
+                  {' • '}{result?.executionTime || 'N/A'}
                 </span>
               )}
               <span className="text-gray-400">Clicca per aprire in nuova tab →</span>

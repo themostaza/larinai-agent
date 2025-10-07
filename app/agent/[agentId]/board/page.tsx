@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { ArrowLeft, Loader2, Calendar, MessageSquare, Settings as SettingsIcon, Zap, CheckCircle, XCircle, Clock, Activity } from 'lucide-react';
+import { ArrowLeft, Loader2, Calendar, MessageSquare, Zap, CheckCircle, XCircle, Clock, Activity } from 'lucide-react';
 
 interface Agent {
   id: string;
@@ -130,8 +130,8 @@ export default function AgentBoardPage() {
     const settings = agent.settings as { tools?: Record<string, { enabled: boolean }> };
     if (!settings.tools) return [];
     return Object.entries(settings.tools)
-      .filter(([_, config]) => config.enabled)
-      .map(([toolName, _]) => toolName);
+      .filter(([, config]) => config.enabled)
+      .map(([toolName,]) => toolName);
   };
 
   if (isLoading) {

@@ -65,28 +65,7 @@ export async function POST(req: Request) {
     const currentTimeUTC = now.toISOString().split('T')[1].split('.')[0];
 
     // Usa il system prompt dal database, o un default se non presente
-    let systemPrompt = agent.system_prompt || `Sei l'Agent AI dell'utente in chat con te.
-
-Rispondi sempre in markdown per migliorare la leggibilità.
-
-CONTESTO TEMPORALE CORRENTE:
-- Data di oggi (UTC): ${currentDateUTC}
-- Ora corrente (UTC): ${currentTimeUTC}
-- Timestamp completo (UTC): ${currentDateTimeUTC}
-
-Il tuo ruolo è:
-- Assistere l'utente con analisi e insights basati sui dati
-- Aiutare con strategie di follow-up usando dati storici
-- Analizzare performance e trend
-
-Quando ti viene chiesta un'analisi:
-1. Identifica quali database e tabelle consultare
-2. Esegui le query SQL necessarie (anche multiple se serve)
-3. Analizza i risultati e fornisci insights actionable
-4. Suggerisci prossimi passi basati sui dati
-5. Usa il contesto temporale corrente per analisi storiche (es. "negli ultimi 30 giorni", "questo mese", "quest'anno")
-
-Rispondi sempre in italiano e mantieni un tono professionale ma accessibile.`;
+    let systemPrompt = agent.system_prompt || ``;
 
     // Aggiungi il contesto temporale se non già presente
     if (!systemPrompt.includes('CONTESTO TEMPORALE')) {
@@ -97,9 +76,12 @@ CONTESTO TEMPORALE CORRENTE:
 - Ora corrente (UTC): ${currentTimeUTC}
 - Timestamp completo (UTC): ${currentDateTimeUTC}
 
-    Usa Markdown nella risposta se valuti che possa aiutare meglio la comprensione.
+    Usa Markdown nella risposta se valuti che possa aiutare meglio la comprensione e usa tutti i componenti grafici del markdown a disposizione (tabelle, liste, link, etc).
 `;
     }
+
+    // Log del system prompt per debugging
+    console.log('📝 [CHAT] System Prompt completo:', systemPrompt);
 
     // 3. Costruisci dinamicamente la lista di tool abilitati
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
-import { Database, Download, Heart, Info, X, Check, AlertCircle, RefreshCw, BrainCircuit, Code } from 'lucide-react';
+import { Download, Heart, Info, X, Check, AlertCircle, RefreshCw, BrainCircuit, Code, ChevronDown, ChevronUp, FileSpreadsheet } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import AgentChatSidebar from '@/app/components/AgentChatSidebar';
 import DynamicChartsContainer from '@/app/components/charts/DynamicChartsContainer';
 
@@ -74,6 +75,7 @@ export default function QueryPage() {
   const [isQueryAccordionOpen, setIsQueryAccordionOpen] = useState(false);
   const [isSaveDialogOpen, setIsSaveDialogOpen] = useState(false);
   const [queryTitle, setQueryTitle] = useState('');
+  const [isEditMode, setIsEditMode] = useState(false); // Track if we're editing or creating new
   const [notification, setNotification] = useState<{
     type: 'success' | 'error';
     message: string;
@@ -89,35 +91,91 @@ export default function QueryPage() {
   const [chartsConfig, setChartsConfig] = useState<ChartsKPIConfig | null>(null); // Chart/KPI configuration from saved query
   const [isRefreshing, setIsRefreshing] = useState(false); // Loading state for refresh
   const [refreshedData, setRefreshedData] = useState<Record<string, unknown> | null>(null); // Refreshed data from API
+  const [savedQueryTitle, setSavedQueryTitle] = useState<string | null>(null); // Title from query_saved table
+  const [showDownloadMenu, setShowDownloadMenu] = useState(false); // Show download format menu
+  const [isDownloading, setIsDownloading] = useState(false); // Loading state for download
+  const [currentPage, setCurrentPage] = useState(1); // Pagina corrente per paginazione
+  const [pageSize, setPageSize] = useState(100); // Numero di record per pagina
+  const [isLoadingFreshData, setIsLoadingFreshData] = useState(false); // Loading per dati freschi all'apertura
+  const [freshData, setFreshData] = useState<unknown[] | null>(null); // Dati freschi caricati automaticamente
 
-  // Funzione per controllare se la query è già salvata
-  const checkIfQuerySaved = async (messageDbId: string) => {
+  // Funzione per caricare i dati freschi dal DB all'apertura
+  const loadFreshData = async (messageDbId: string, isSaved: boolean) => {
+    setIsLoadingFreshData(true);
     try {
-      const response = await fetch(`/api/query/save?chatMessageId=${messageDbId}`);
+      // Usa execute (query salvate) o refresh (query da chat)
+      const endpoint = isSaved ? '/api/query/execute' : '/api/query/refresh';
+      
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          chatMessageId: messageDbId,
+          agentId: agentId
+        })
+      });
+
       const result = await response.json();
       
-      if (result.success && result.data && result.data.length > 0) {
-        setIsQuerySaved(true);
-        // Load charts configuration if available
-        const savedQuery = result.data[0];
+      if (result.success && result.data && result.data.results) {
+        setFreshData(result.data.results);
+        setCurrentPage(1); // Reset alla prima pagina
+      }
+    } catch (error) {
+      console.error('Error loading fresh data:', error);
+    } finally {
+      setIsLoadingFreshData(false);
+    }
+  };
+
+  // Funzione per ricaricare la configurazione chart_kpi
+  const reloadChartConfig = async () => {
+    try {
+      const messageDbId = queryData?.message?.dbId || queryData?.message?.id;
+      if (!messageDbId) {
+        console.warn('⚠️ [QUERY-PAGE] Cannot reload: messageDbId missing');
+        return;
+      }
+
+      console.log('🔄 [QUERY-PAGE] Reloading chart config for:', messageDbId);
+      
+      const checkResponse = await fetch(`/api/query/save?chatMessageId=${messageDbId}`);
+      const checkResult = await checkResponse.json();
+      
+      console.log('📊 [QUERY-PAGE] Fetch result:', checkResult);
+      
+      if (checkResult.success && checkResult.data && checkResult.data.length > 0) {
+        const savedQuery = checkResult.data[0];
+        
+        console.log('📋 [QUERY-PAGE] Saved query chart_kpi:', savedQuery.chart_kpi);
+        
         if (savedQuery.chart_kpi) {
           try {
             const config = typeof savedQuery.chart_kpi === 'string' 
               ? JSON.parse(savedQuery.chart_kpi) 
               : savedQuery.chart_kpi;
+            
+            console.log('✅ [QUERY-PAGE] Setting new chart config:', config);
             setChartsConfig(config);
+            
+            // Mostra notifica di successo
+            setNotification({
+              type: 'success',
+              message: '✨ Dashboard aggiornata con successo!'
+            });
           } catch (error) {
-            console.error('Error parsing charts config:', error);
-            setChartsConfig(null);
+            console.error('❌ [QUERY-PAGE] Error parsing charts config:', error);
           }
+        } else {
+          console.log('ℹ️ [QUERY-PAGE] No chart_kpi found in saved query');
         }
       } else {
-        setIsQuerySaved(false);
-        setChartsConfig(null);
+        console.warn('⚠️ [QUERY-PAGE] No saved query found');
       }
     } catch (error) {
-      console.error('Error checking if query is saved:', error);
-      setIsQuerySaved(false);
+      console.error('❌ [QUERY-PAGE] Error reloading chart config:', error);
     }
   };
 
@@ -135,8 +193,37 @@ export default function QueryPage() {
 
         setQueryData(result.data);
         
+        const messageDbId = result.data.message.dbId || result.data.message.id;
+        
         // Controlla se la query è già salvata
-        await checkIfQuerySaved(result.data.message.dbId || result.data.message.id);
+        const checkResponse = await fetch(`/api/query/save?chatMessageId=${messageDbId}`);
+        const checkResult = await checkResponse.json();
+        
+        const isSaved = checkResult.success && checkResult.data && checkResult.data.length > 0;
+        setIsQuerySaved(isSaved);
+        
+        // Se salvata, carica anche chart config e titolo
+        if (isSaved) {
+          const savedQuery = checkResult.data[0];
+          
+          if (savedQuery.title) {
+            setSavedQueryTitle(savedQuery.title);
+          }
+          
+          if (savedQuery.chart_kpi) {
+            try {
+              const config = typeof savedQuery.chart_kpi === 'string' 
+                ? JSON.parse(savedQuery.chart_kpi) 
+                : savedQuery.chart_kpi;
+              setChartsConfig(config);
+            } catch (error) {
+              console.error('Error parsing charts config:', error);
+            }
+          }
+        }
+        
+        // Carica SEMPRE i dati freschi dal DB (sia salvata che non)
+        await loadFreshData(messageDbId, isSaved);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unknown error');
       } finally {
@@ -159,8 +246,62 @@ export default function QueryPage() {
     }
   }, [notification]);
 
+  // Close download menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (showDownloadMenu && !target.closest('.relative')) {
+        setShowDownloadMenu(false);
+      }
+    };
+    
+    if (showDownloadMenu) {
+      document.addEventListener('click', handleClickOutside);
+      return () => document.removeEventListener('click', handleClickOutside);
+    }
+  }, [showDownloadMenu]);
+
+  // Helper per mostrare il dialog di salvataggio se non è già salvata
+  const promptSaveIfNeeded = (action: string): boolean => {
+    if (!isQuerySaved) {
+      // Personalizza il messaggio in base all'azione
+      let message = '';
+      switch (action) {
+        case 'download':
+          message = 'Salva questa query per ritrovarla facilmente in futuro e gestire i download!';
+          break;
+        case 'refresh':
+          message = 'Salva questa query per ritrovarla facilmente in futuro e aggiornare i dati!';
+          break;
+        case 'charts':
+          message = 'Salva questa query per ritrovarla facilmente in futuro e creare grafici personalizzati!';
+          break;
+        case 'agent':
+          message = 'Salva questa query per ritrovarla facilmente in futuro e analizzarla con l\'Agent!';
+          break;
+        default:
+          message = 'Salva questa query per ritrovarla facilmente in futuro!';
+      }
+      
+      setNotification({
+        type: 'error',
+        message
+      });
+      
+      // Apri il dialog di salvataggio
+      openSaveDialog();
+      return false; // Blocca l'azione
+    }
+    return true; // Continua con l'azione
+  };
+
   // Funzione per cambiare tab e aggiornare URL
   const handleTabChange = (newTab: 'data' | 'charts' | 'python') => {
+    // Se cambio a charts, chiedi di salvare se non salvata
+    if (newTab === 'charts' && !promptSaveIfNeeded('charts')) {
+      return;
+    }
+    
     setActiveTab(newTab);
     const url = new URL(window.location.href);
     url.searchParams.set('tab', newTab);
@@ -169,10 +310,15 @@ export default function QueryPage() {
 
   // Funzione per aggiornare i dati della query
   const refreshQueryData = async () => {
-    if (!queryData?.message?.dbId || !isQuerySaved) {
+    // Check se deve salvare prima
+    if (!promptSaveIfNeeded('refresh')) {
+      return;
+    }
+    
+    if (!queryData?.message?.dbId) {
       setNotification({
         type: 'error',
-        message: 'Impossibile aggiornare: query non salvata'
+        message: 'Impossibile aggiornare: dati mancanti'
       });
       return;
     }
@@ -185,7 +331,8 @@ export default function QueryPage() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          chatMessageId: queryData.message.dbId
+          chatMessageId: queryData.message.dbId,
+          agentId: agentId
         })
       });
 
@@ -193,6 +340,8 @@ export default function QueryPage() {
       
       if (result.success) {
         setRefreshedData(result.data);
+        setFreshData(null); // Pulisci i dati freschi quando fai refresh manuale
+        setCurrentPage(1); // Reset alla prima pagina
         setNotification({
           type: 'success',
           message: 'Dati aggiornati con successo!'
@@ -215,11 +364,13 @@ export default function QueryPage() {
   };
 
   const formatTableData = () => {
-    // Usa i dati refreshed se disponibili, altrimenti usa i dati originali
+    // Priorità: refreshedData > freshData > dati originali
     let data;
     
     if (refreshedData?.results) {
       data = refreshedData.results;
+    } else if (freshData) {
+      data = freshData;
     } else if (queryData?.part) {
       const output = queryData.part.output || queryData.part.result || {};
       if (!output || !output.results) return null;
@@ -237,6 +388,25 @@ export default function QueryPage() {
       console.error('Error formatting table data:', e);
     }
     return null;
+  };
+
+  // Funzione per ottenere i dati paginati
+  const getPaginatedData = () => {
+    const allData = formatTableData();
+    if (!allData) return null;
+
+    const startIndex = (currentPage - 1) * pageSize;
+    const endIndex = startIndex + pageSize;
+    const paginatedRows = allData.rows.slice(startIndex, endIndex);
+
+    return {
+      headers: allData.headers,
+      rows: paginatedRows,
+      totalRows: allData.rows.length,
+      totalPages: Math.ceil(allData.rows.length / pageSize),
+      currentPage,
+      pageSize
+    };
   };
 
   if (isLoading) {
@@ -278,75 +448,197 @@ export default function QueryPage() {
   const result = output;
 
   const tableData = formatTableData();
+  const paginatedData = getPaginatedData();
 
-  // Funzione per aprire il dialog di salvataggio
+  // Funzione per aprire il dialog di salvataggio (nuovo)
   const openSaveDialog = () => {
     const purpose = queryData?.part?.input?.purpose || queryData?.part?.output?.purpose || queryData?.part?.args?.purpose || '';
     setQueryTitle(String(purpose));
+    setIsEditMode(false);
     setIsSaveDialogOpen(true);
   };
 
-  // Funzione per salvare la query
+  // Funzione per aprire il dialog in modalità modifica
+  const openEditDialog = () => {
+    if (savedQueryTitle) {
+      setQueryTitle(savedQueryTitle);
+      setIsEditMode(true);
+      setIsSaveDialogOpen(true);
+    }
+  };
+
+  // Funzione per salvare o aggiornare la query
   const saveQuery = async () => {
     if (!queryData || !queryTitle.trim()) return;
 
     try {
-      const input = queryData.part.input || queryData.part.args || {};
-      const output = queryData.part.output || queryData.part.result || {};
-      
-      const response = await fetch('/api/query/save', {
+      if (isEditMode) {
+        // Modalità modifica: aggiorna solo il titolo
+        const response = await fetch('/api/query/save', {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            chatMessageId: queryData.message.dbId || queryData.message.id,
+            title: queryTitle.trim()
+          })
+        });
+
+        const result = await response.json();
+        
+        if (result.success) {
+          setIsSaveDialogOpen(false);
+          setSavedQueryTitle(queryTitle.trim()); // Update the displayed title
+          setQueryTitle('');
+          setNotification({
+            type: 'success',
+            message: 'Titolo aggiornato con successo!'
+          });
+        } else {
+          setNotification({
+            type: 'error',
+            message: 'Errore nell\'aggiornamento: ' + (result.error || 'Errore sconosciuto')
+          });
+        }
+      } else {
+        // Modalità nuovo salvataggio
+        const input = queryData.part.input || queryData.part.args || {};
+        const output = queryData.part.output || queryData.part.result || {};
+        
+        const response = await fetch('/api/query/save', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            chatMessageId: queryData.message.dbId || queryData.message.id,
+            query: input.query || output.query || '',
+            title: queryTitle.trim(),
+            body: {
+              input,
+              output,
+              queryId: queryData.queryId,
+              partIndex: queryData.partIndex
+            }
+          })
+        });
+
+        const result = await response.json();
+        
+        if (result.success) {
+          setIsSaveDialogOpen(false);
+          setSavedQueryTitle(queryTitle.trim()); // Update the displayed title
+          setQueryTitle('');
+          setIsQuerySaved(true); // Marca la query come salvata
+          setNotification({
+            type: 'success',
+            message: 'Query salvata tra i preferiti!'
+          });
+        } else {
+          setNotification({
+            type: 'error',
+            message: 'Errore nel salvataggio: ' + (result.error || 'Errore sconosciuto')
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Error saving/updating query:', error);
+      setNotification({
+        type: 'error',
+        message: isEditMode ? 'Errore nell\'aggiornamento del titolo' : 'Errore nel salvataggio della query'
+      });
+    }
+  };
+
+  // Funzione per recuperare i dati dal DB
+  const fetchDataForDownload = async () => {
+    if (!queryData || !isQuerySaved) {
+      setNotification({
+        type: 'error',
+        message: 'Impossibile scaricare: query non salvata'
+      });
+      return null;
+    }
+
+    try {
+      // Esegui la query sul database oggetto di analisi
+      const response = await fetch('/api/query/execute', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           chatMessageId: queryData.message.dbId || queryData.message.id,
-          query: input.query || output.query || '',
-          title: queryTitle.trim(),
-          body: {
-            input,
-            output,
-            queryId: queryData.queryId,
-            partIndex: queryData.partIndex
-          }
+          agentId: agentId
         })
       });
 
       const result = await response.json();
       
-      if (result.success) {
-        setIsSaveDialogOpen(false);
-        setQueryTitle('');
-        setIsQuerySaved(true); // Marca la query come salvata
-        setNotification({
-          type: 'success',
-          message: 'Query salvata tra i preferiti!'
-        });
-      } else {
+      if (!result.success || !result.data || !result.data.results) {
         setNotification({
           type: 'error',
-          message: 'Errore nel salvataggio: ' + (result.error || 'Errore sconosciuto')
+          message: 'Errore nel recupero dei dati: ' + (result.error || 'Errore sconosciuto')
         });
+        return null;
       }
+
+      const data = result.data.results;
+      
+      if (!Array.isArray(data) || data.length === 0) {
+        setNotification({
+          type: 'error',
+          message: 'Nessun dato disponibile per il download'
+        });
+        return null;
+      }
+
+      return {
+        data,
+        metadata: {
+          totalCount: result.data.totalCount,          // Totale record nel DB
+          returnedCount: result.data.returnedCount,    // Record effettivamente restituiti
+          executionTime: result.data.executionTime,
+          database: result.data.database,
+          query: result.data.query,
+          purpose: result.data.purpose,
+          executedAt: result.data.executedAt,
+          aiLimitApplied: result.data.aiLimitApplied   // Flag se è stato applicato un limite
+        }
+      };
     } catch (error) {
-      console.error('Error saving query:', error);
+      console.error('Error fetching data:', error);
       setNotification({
         type: 'error',
-        message: 'Errore nel salvataggio della query'
+        message: 'Errore durante il recupero dei dati'
       });
+      return null;
     }
   };
 
   // Funzione per scaricare i dati come CSV
-  const downloadCSV = () => {
-    if (!tableData || !queryData) return;
+  const downloadCSV = async () => {
+    // Check se deve salvare prima
+    if (!promptSaveIfNeeded('download')) {
+      setShowDownloadMenu(false);
+      return;
+    }
     
+    setIsDownloading(true);
+    setShowDownloadMenu(false); // Chiudi il menu
     try {
+      const result = await fetchDataForDownload();
+      if (!result) return;
+
+      const { data } = result;
+      const headers = Object.keys(data[0] as Record<string, unknown>);
+      
       // Header CSV
       const csvContent = [
-        tableData.headers.join(','),
-        ...tableData.rows.map(row => 
-          tableData.headers.map(header => {
+        headers.join(','),
+        ...data.map(row => 
+          headers.map(header => {
             const value = String((row as Record<string, unknown>)[header] ?? '');
             // Escape virgolette e racchiudi in virgolette se contiene virgole o virgolette
             const escapedValue = value.replace(/"/g, '""');
@@ -358,13 +650,13 @@ export default function QueryPage() {
       ].join('\n');
       
       // Crea e scarica il file
-      const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' }); // \uFEFF per BOM UTF-8
+      const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
       
       // Nome file con timestamp
       const timestamp = new Date().toISOString().split('T')[0];
-      const filename = `query-${queryData.queryId}-${timestamp}.csv`;
+      const filename = `query-${queryData?.queryId}-${timestamp}.csv`;
       link.download = filename;
       
       // Trigger download
@@ -373,10 +665,84 @@ export default function QueryPage() {
       document.body.removeChild(link);
       URL.revokeObjectURL(link.href);
       
-      console.log(`CSV downloaded: ${filename}`);
+      setNotification({
+        type: 'success',
+        message: 'CSV scaricato con successo!'
+      });
+      setShowDownloadMenu(false);
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+  // Funzione per scaricare i dati come XLSX
+  const downloadXLSX = async () => {
+    // Check se deve salvare prima
+    if (!promptSaveIfNeeded('download')) {
+      setShowDownloadMenu(false);
+      return;
+    }
+    
+    setIsDownloading(true);
+    setShowDownloadMenu(false); // Chiudi il menu
+    try {
+      const result = await fetchDataForDownload();
+      if (!result) return;
+
+      const { data, metadata } = result;
+      
+      // Crea un nuovo workbook
+      const workbook = XLSX.utils.book_new();
+      
+      // Foglio 1: Dati
+      const dataSheet = XLSX.utils.json_to_sheet(data);
+      XLSX.utils.book_append_sheet(workbook, dataSheet, 'Data');
+      
+      // Foglio 2: Download Info
+      const downloadInfo = [
+        { Property: 'Query Title', Value: savedQueryTitle || metadata.purpose || 'N/A' },
+        { Property: 'Database', Value: metadata.database || 'N/A' },
+        { Property: 'Total Records (DB)', Value: metadata.totalCount || 0 },
+        { Property: 'Records Returned', Value: metadata.returnedCount || 0 },
+        { Property: 'Execution Time', Value: metadata.executionTime || 'N/A' },
+        { Property: 'Executed At', Value: new Date(metadata.executedAt).toLocaleString('it-IT') },
+        { Property: 'Downloaded At', Value: new Date().toLocaleString('it-IT') },
+        { Property: 'Limited', Value: metadata.aiLimitApplied ? 'Yes' : 'No' },
+        { Property: 'Query ID', Value: queryData?.queryId || 'N/A' },
+        { Property: 'Session ID', Value: sessionId || 'N/A' },
+        { Property: '', Value: '' },
+        { Property: 'SQL Query', Value: '' },
+        { Property: metadata.query || '', Value: '' }
+      ];
+      
+      const infoSheet = XLSX.utils.json_to_sheet(downloadInfo);
+      
+      // Imposta la larghezza delle colonne per il foglio info
+      infoSheet['!cols'] = [
+        { wch: 20 },  // Property column
+        { wch: 60 }   // Value column
+      ];
+      
+      XLSX.utils.book_append_sheet(workbook, infoSheet, 'Download Info');
+      
+      // Genera il file
+      const timestamp = new Date().toISOString().split('T')[0];
+      const filename = `query-${queryData?.queryId}-${timestamp}.xlsx`;
+      XLSX.writeFile(workbook, filename);
+      
+      setNotification({
+        type: 'success',
+        message: 'XLSX scaricato con successo!'
+      });
+      setShowDownloadMenu(false);
     } catch (error) {
-      console.error('Error downloading CSV:', error);
-      alert('Errore durante il download del CSV');
+      console.error('Error creating XLSX:', error);
+      setNotification({
+        type: 'error',
+        message: 'Errore durante la creazione del file XLSX'
+      });
+    } finally {
+      setIsDownloading(false);
     }
   };
 
@@ -423,17 +789,28 @@ export default function QueryPage() {
         {/* Header con fisarmonica */}
         <div className="border-b border-gray-700">
         <div className="flex items-center justify-between px-6 py-3 hover:bg-gray-900/30 transition-colors">
-          <button
+          <div 
+            className="flex items-center gap-3 flex-1 cursor-pointer"
             onClick={() => setIsQueryAccordionOpen(!isQueryAccordionOpen)}
-            className="flex items-center gap-3 flex-1"
           >
-            <Database className="w-6 h-6 text-blue-400" />
-            {purpose && (
-              <span className="text-lg font-medium text-white">
-                {String(purpose)}
+            {isQueryAccordionOpen ? (
+              <ChevronUp className="w-6 h-6 text-blue-400" />
+            ) : (
+              <ChevronDown className="w-6 h-6 text-blue-400" />
+            )}
+            {(savedQueryTitle || purpose) && (
+              <span 
+                className={`text-lg font-medium text-white ${isQuerySaved ? 'hover:text-blue-400 transition-colors' : ''}`}
+                onClick={isQuerySaved ? (e) => {
+                  e.stopPropagation();
+                  openEditDialog();
+                } : undefined}
+                title={isQuerySaved ? 'Clicca per modificare il titolo' : undefined}
+              >
+                {String(savedQueryTitle || purpose)}
               </span>
             )}
-          </button>
+          </div>
           
           <div className="flex items-center gap-2">
             <div className="relative group">
@@ -460,7 +837,17 @@ export default function QueryPage() {
             </button>
             
             <button
-              onClick={() => setIsAgentSidebarOpen(!isAgentSidebarOpen)}
+              onClick={() => {
+                // Se già aperta, chiudi senza check
+                if (isAgentSidebarOpen) {
+                  setIsAgentSidebarOpen(false);
+                  return;
+                }
+                // Se non aperta, check se deve salvare prima di aprire
+                if (promptSaveIfNeeded('agent')) {
+                  setIsAgentSidebarOpen(true);
+                }
+              }}
               className={`group flex items-center p-2 rounded-lg border transition-all duration-300 overflow-hidden ${
                 isAgentSidebarOpen
                   ? 'bg-white text-black border-gray-300 hover:bg-gray-100'
@@ -529,7 +916,7 @@ export default function QueryPage() {
                     : 'bg-gray-800/50 border-gray-700 text-gray-400 hover:text-gray-300 hover:bg-gray-800 hover:border-gray-600'
                 }`}
               >
-                Analisi Dati con Python
+                Analisi pro con python
               </button>
             </div>
             
@@ -537,49 +924,94 @@ export default function QueryPage() {
             {result?.success !== false && (
               <div className="flex items-center gap-3">
                 <div className="text-sm text-gray-400">
-                  {String(refreshedData?.rowCount || result?.rowCount || 0)} record • {String(refreshedData?.executionTime || result?.executionTime || 'N/A')} • {
-                    refreshedData?.refreshedAt 
-                      ? new Date(String(refreshedData.refreshedAt)).toLocaleString('it-IT', {
-                          year: 'numeric',
-                          month: '2-digit',
-                          day: '2-digit',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                          second: '2-digit'
-                        }) + ' (aggiornato)'
-                      : queryData.message?.createdAt 
-                        ? new Date(String(queryData.message.createdAt)).toLocaleString('it-IT', {
-                            year: 'numeric',
-                            month: '2-digit',
-                            day: '2-digit',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                            second: '2-digit'
-                          })
-                        : 'N/A'
-                  }
-                  {Boolean(refreshedData?.truncated || result?.truncated) && (
-                    <span className="text-yellow-400 ml-2">⚠️ Troncato</span>
+                  {paginatedData ? (
+                    <>
+                      {paginatedData.totalRows} record
+                      {paginatedData.totalRows > pageSize && (
+                        <span className="ml-2">
+                          (pagina {currentPage} di {paginatedData.totalPages})
+                        </span>
+                      )}
+                      {/* Execution time e timestamp */}
+                      <span className="ml-2">
+                        • {String(refreshedData?.executionTime || result?.executionTime || 'N/A')}
+                      </span>
+                      <span className="ml-2">
+                        • {
+                          refreshedData?.refreshedAt 
+                            ? new Date(String(refreshedData.refreshedAt)).toLocaleString('it-IT', {
+                                year: 'numeric',
+                                month: '2-digit',
+                                day: '2-digit',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                                second: '2-digit'
+                              })
+                            : queryData.message?.createdAt 
+                              ? new Date(String(queryData.message.createdAt)).toLocaleString('it-IT', {
+                                  year: 'numeric',
+                                  month: '2-digit',
+                                  day: '2-digit',
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                  second: '2-digit'
+                                })
+                              : 'N/A'
+                        }
+                      </span>
+                    </>
+                  ) : (
+                    `${String(refreshedData?.totalCount || result?.totalCount || 0)} record totali`
+                  )}
+                  {isLoadingFreshData && (
+                    <span className="ml-2 text-blue-400">⏳ Caricamento...</span>
                   )}
                 </div>
                 {tableData && (
                   <div className="flex gap-2">
-                    <button
-                      onClick={downloadCSV}
-                      className="group flex items-center p-2 bg-gray-800 text-gray-300 rounded-lg border border-gray-700 hover:bg-gray-700 hover:text-white transition-all duration-300 overflow-hidden"
-                      title="Scarica dati come CSV"
-                    >
-                      <Download size={16} className="flex-shrink-0" />
-                      <span className="whitespace-nowrap text-sm font-medium opacity-0 group-hover:opacity-100 max-w-0 group-hover:max-w-xs group-hover:ml-2 transition-all duration-300">
-                        Scarica CSV
-                      </span>
-                    </button>
+                    <div className="relative">
+                      <button
+                        onClick={() => setShowDownloadMenu(!showDownloadMenu)}
+                        disabled={isDownloading}
+                        className="group flex items-center p-2 bg-gray-800 text-gray-300 rounded-lg border border-gray-700 hover:bg-gray-700 hover:text-white disabled:bg-gray-600 disabled:text-gray-500 disabled:cursor-not-allowed transition-all duration-300 overflow-hidden"
+                        title="Scarica dati (esegue query sul DB)"
+                      >
+                        {isDownloading ? (
+                          <RefreshCw size={16} className="flex-shrink-0 animate-spin" />
+                        ) : (
+                          <Download size={16} className="flex-shrink-0" />
+                        )}
+                        <span className="whitespace-nowrap text-sm font-medium opacity-0 group-hover:opacity-100 max-w-0 group-hover:max-w-xs group-hover:ml-2 transition-all duration-300">
+                          {isDownloading ? 'Download...' : 'Scarica'}
+                        </span>
+                      </button>
+                      
+                      {/* Download Menu */}
+                      {showDownloadMenu && !isDownloading && (
+                        <div className="absolute right-0 top-full mt-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-50 min-w-[180px]">
+                          <button
+                            onClick={downloadCSV}
+                            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-300 hover:bg-gray-700 hover:text-white transition-colors rounded-t-lg"
+                          >
+                            <Download size={16} />
+                            <span>Scarica CSV</span>
+                          </button>
+                          <button
+                            onClick={downloadXLSX}
+                            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-300 hover:bg-gray-700 hover:text-white transition-colors rounded-b-lg border-t border-gray-700"
+                          >
+                            <FileSpreadsheet size={16} />
+                            <span>Scarica XLSX</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
                     
                     <button
                       onClick={refreshQueryData}
-                      disabled={isRefreshing || !isQuerySaved}
+                      disabled={isRefreshing}
                       className="group flex items-center p-2 bg-gray-800 text-gray-300 rounded-lg border border-gray-700 hover:bg-gray-700 hover:text-white disabled:bg-gray-600 disabled:text-gray-500 disabled:cursor-not-allowed transition-all duration-300 overflow-hidden"
-                      title={isQuerySaved ? "Aggiorna dati" : "Salva la query per abilitare l'aggiornamento"}
+                      title="Aggiorna dati dal database"
                     >
                       <RefreshCw size={16} className={`flex-shrink-0 ${isRefreshing ? 'animate-spin' : ''}`} />
                       <span className="whitespace-nowrap text-sm font-medium opacity-0 group-hover:opacity-100 max-w-0 group-hover:max-w-xs group-hover:ml-2 transition-all duration-300">
@@ -604,36 +1036,97 @@ export default function QueryPage() {
                 {String(result.error || 'Errore sconosciuto')}
               </div>
             </div>
-           ) : tableData ? (
-             <div className="flex-1 bg-gray-900 rounded-lg border border-gray-700 overflow-hidden min-h-0">
-               <div className="overflow-auto h-full custom-scrollbar">
-                 <table className="w-full text-sm min-w-max">
-                   <thead className="bg-gray-800 sticky top-0 z-10">
-                     <tr>
-                       {tableData.headers.map((header, index) => (
-                         <th key={index} className="px-4 py-3 text-left text-gray-300 font-medium border-b border-gray-600 whitespace-nowrap">
-                           {header}
-                         </th>
-                       ))}
-                     </tr>
-                   </thead>
-                   <tbody>
-                     {tableData.rows.map((row, rowIndex) => (
-                       <tr key={rowIndex} className="border-b border-gray-800 hover:bg-gray-800/50">
-                         {tableData.headers.map((header, colIndex) => (
-                           <td key={colIndex} className="px-4 py-3 text-gray-300 whitespace-nowrap">
-                             {String((row as Record<string, unknown>)[header] ?? '')}
-                           </td>
+           ) : paginatedData ? (
+             <div className="flex-1 flex flex-col min-h-0 gap-3">
+               {/* Controlli paginazione superiori */}
+               {paginatedData.totalRows > pageSize && (
+                 <div className="flex items-center justify-between bg-gray-900 rounded-lg border border-gray-700 px-4 py-2">
+                   <div className="flex items-center gap-2">
+                     <span className="text-sm text-gray-400">Righe per pagina:</span>
+                     <select
+                       value={pageSize}
+                       onChange={(e) => {
+                         setPageSize(Number(e.target.value));
+                         setCurrentPage(1);
+                       }}
+                       className="bg-gray-800 text-white text-sm rounded border border-gray-600 px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                     >
+                       <option value={100}>100</option>
+                       <option value={200}>200</option>
+                       <option value={500}>500</option>
+                     </select>
+                   </div>
+                   <div className="flex items-center gap-3">
+                     <span className="text-sm text-gray-400">
+                       Mostrando {(currentPage - 1) * pageSize + 1}-{Math.min(currentPage * pageSize, paginatedData.totalRows)} di {paginatedData.totalRows}
+                     </span>
+                     <div className="flex gap-1">
+                       <button
+                         onClick={() => setCurrentPage(1)}
+                         disabled={currentPage === 1}
+                         className="px-3 py-1 text-sm bg-gray-800 text-gray-300 rounded border border-gray-600 hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                       >
+                         Prima
+                       </button>
+                       <button
+                         onClick={() => setCurrentPage(currentPage - 1)}
+                         disabled={currentPage === 1}
+                         className="px-3 py-1 text-sm bg-gray-800 text-gray-300 rounded border border-gray-600 hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                       >
+                         ← Prec
+                       </button>
+                       <button
+                         onClick={() => setCurrentPage(currentPage + 1)}
+                         disabled={currentPage === paginatedData.totalPages}
+                         className="px-3 py-1 text-sm bg-gray-800 text-gray-300 rounded border border-gray-600 hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                       >
+                         Succ →
+                       </button>
+                       <button
+                         onClick={() => setCurrentPage(paginatedData.totalPages)}
+                         disabled={currentPage === paginatedData.totalPages}
+                         className="px-3 py-1 text-sm bg-gray-800 text-gray-300 rounded border border-gray-600 hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                       >
+                         Ultima
+                       </button>
+                     </div>
+                   </div>
+                 </div>
+               )}
+               
+               {/* Tabella dati */}
+               <div className="flex-1 bg-gray-900 rounded-lg border border-gray-700 overflow-hidden min-h-0">
+                 <div className="overflow-auto h-full custom-scrollbar">
+                   <table className="w-full text-sm min-w-max">
+                     <thead className="bg-gray-800 sticky top-0 z-10">
+                       <tr>
+                         {paginatedData.headers.map((header, index) => (
+                           <th key={index} className="px-4 py-3 text-left text-gray-300 font-medium border-b border-gray-600 whitespace-nowrap">
+                             {header}
+                           </th>
                          ))}
                        </tr>
-                     ))}
-                   </tbody>
-                 </table>
+                     </thead>
+                     <tbody>
+                       {paginatedData.rows.map((row, rowIndex) => (
+                         <tr key={rowIndex} className="border-b border-gray-800 hover:bg-gray-800/50">
+                           {paginatedData.headers.map((header, colIndex) => (
+                             <td key={colIndex} className="px-4 py-3 text-gray-300 whitespace-nowrap">
+                               {String((row as Record<string, unknown>)[header] ?? '')}
+                             </td>
+                           ))}
+                         </tr>
+                       ))}
+                     </tbody>
+                   </table>
+                 </div>
                </div>
              </div>
           ) : (
             <div className="bg-gray-900 rounded-lg border border-gray-700 p-6 text-center">
-              <div className="text-gray-400">Nessun dato da visualizzare</div>
+              <div className="text-gray-400">
+                {isLoadingFreshData ? 'Caricamento dati in corso...' : 'Nessun dato da visualizzare'}
+              </div>
             </div>
           )}
             </>
@@ -642,8 +1135,13 @@ export default function QueryPage() {
           {activeTab === 'charts' && (
             <DynamicChartsContainer
               config={chartsConfig}
-              data={tableData?.rows || []}
-              onOpenAgentChat={() => setIsAgentSidebarOpen(true)}
+              data={tableData?.rows || []} // Usa tutti i dati per i grafici, non paginati
+              onOpenAgentChat={() => {
+                // Check se deve salvare prima di aprire l'Agent
+                if (promptSaveIfNeeded('agent')) {
+                  setIsAgentSidebarOpen(true);
+                }
+              }}
             />
           )}
           
@@ -690,6 +1188,7 @@ export default function QueryPage() {
             queryId,
             chatMessageId: queryData?.message?.dbId || queryData?.message?.id
           }}
+          onChartsUpdated={reloadChartConfig}
         />
       </div>
 
@@ -704,7 +1203,9 @@ export default function QueryPage() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between p-6 border-b border-gray-700">
-              <h2 className="text-lg font-medium text-white">Salva Query Preferita</h2>
+              <h2 className="text-lg font-medium text-white">
+                {isEditMode ? 'Modifica Titolo Query' : 'Salva Query Preferita'}
+              </h2>
               <button
                 onClick={() => setIsSaveDialogOpen(false)}
                 className="text-gray-400 hover:text-white transition-colors"
@@ -742,7 +1243,7 @@ export default function QueryPage() {
                   className="flex items-center gap-2 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 disabled:bg-gray-600 disabled:cursor-not-allowed border border-gray-600 hover:border-gray-500 disabled:border-gray-600 rounded-md text-sm text-gray-300 hover:text-white disabled:text-gray-500 transition-all duration-200"
                 >
                   <Heart className="w-4 h-4" />
-                  Salva
+                  {isEditMode ? 'Aggiorna' : 'Salva'}
                 </button>
               </div>
             </div>

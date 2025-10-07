@@ -20,6 +20,11 @@ interface UpdateChartKPIRequest {
   chart_kpi: Record<string, unknown>;
 }
 
+interface UpdateTitleRequest {
+  chatMessageId: string;
+  title: string;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body: SaveQueryRequest = await request.json();
@@ -230,6 +235,86 @@ export async function PUT(request: NextRequest) {
 
   } catch (error) {
     console.error('Error in update chart_kpi API:', error);
+    return NextResponse.json(
+      { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Errore interno del server' 
+      },
+      { status: 500 }
+    );
+  }
+}
+
+// PATCH: Aggiorna solo il titolo di una query salvata
+export async function PATCH(request: NextRequest) {
+  try {
+    const body: UpdateTitleRequest = await request.json();
+    const { chatMessageId, title } = body;
+
+    // Validazione input
+    if (!chatMessageId || !title || !title.trim()) {
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'Campi richiesti: chatMessageId, title' 
+        },
+        { status: 400 }
+      );
+    }
+
+    console.log('Updating title for message:', chatMessageId, 'new title:', title);
+
+    // Verifica che la query salvata esista
+    const { data: savedQuery } = await supabase
+      .from('query_saved')
+      .select('id')
+      .eq('chat_message_id', chatMessageId)
+      .single();
+
+    if (!savedQuery) {
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'Query salvata non trovata' 
+        },
+        { status: 404 }
+      );
+    }
+
+    // Aggiorna il titolo
+    const { data, error } = await supabase
+      .from('query_saved')
+      .update({
+        title: title.trim()
+      })
+      .eq('chat_message_id', chatMessageId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error updating title:', error);
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: `Errore nell'aggiornamento: ${error.message}` 
+        },
+        { status: 500 }
+      );
+    }
+
+    console.log('Title updated successfully:', data.id);
+
+    return NextResponse.json({
+      success: true,
+      message: 'Titolo aggiornato con successo',
+      data: {
+        id: data.id,
+        title: data.title
+      }
+    });
+
+  } catch (error) {
+    console.error('Error in update title API:', error);
     return NextResponse.json(
       { 
         success: false, 
