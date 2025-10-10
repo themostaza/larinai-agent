@@ -33,19 +33,24 @@ export async function GET(
       );
     }
 
-    // Verify user has access to this organization
-    const { data: userOrgs } = await supabase
-      .from('link_organization_user')
-      .select('organization_id, role')
-      .eq('user_id', user.id);
-
-    const hasAccess = userOrgs?.some(
-      org => org.organization_id === agent.organization_id
-    );
-
-    if (!hasAccess) {
+    // Verify user is admin of this organization
+    if (!agent.organization_id) {
       return NextResponse.json(
-        { success: false, error: 'Accesso negato' },
+        { success: false, error: 'Agent non associato a un\'organizzazione' },
+        { status: 403 }
+      );
+    }
+
+    const { data: userOrg } = await supabase
+      .from('link_organization_user')
+      .select('role')
+      .eq('user_id', user.id)
+      .eq('organization_id', agent.organization_id)
+      .single();
+
+    if (!userOrg || userOrg.role !== 'admin') {
+      return NextResponse.json(
+        { success: false, error: 'Accesso negato - solo admin' },
         { status: 403 }
       );
     }

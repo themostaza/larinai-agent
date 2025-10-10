@@ -172,10 +172,12 @@ export default function ChatSessionPage() {
       setMessages(result.messages);
       setLastMessageCount(result.messages.length);
       
-      // Se ci sono già 2+ messaggi user, il titolo è già stato generato
+      // Imposta il contatore in base ai messaggi user già presenti
       const userMessages = result.messages.filter((msg: ChatMessage) => msg.role === 'user');
-      if (userMessages.length >= 2) {
-        setTitleGenerated(true);
+      if (userMessages.length >= 3) {
+        setTitleGenerationCount(3); // Completato
+      } else if (userMessages.length > 0) {
+        setTitleGenerationCount(userMessages.length); // In corso
       }
       
       console.log(`Loaded ${result.messages.length} messages from session ${sessionId}`);
@@ -187,31 +189,36 @@ export default function ChatSessionPage() {
   }, [sessionId, setMessages]);
 
   const [lastMessageCount, setLastMessageCount] = useState(0);
-  const [titleGenerated, setTitleGenerated] = useState(false); // Flag per evitare generazioni multiple
+  const [titleGenerationCount, setTitleGenerationCount] = useState(0); // Contatore generazioni (max 3)
 
-  // Funzione per generare il titolo della chat
-  const generateChatTitle = useCallback(async () => {
-    if (titleGenerated) {
-      console.log('🤖 Titolo già generato, skip');
+  // Funzione per generare/raffinare il titolo della chat
+  const generateChatTitle = useCallback(async (userMessageCount: number) => {
+    if (titleGenerationCount >= 3) {
+      console.log('🤖 Titolo già raffinato 3 volte, skip');
       return;
     }
 
     try {
-      setTitleGenerated(true);
-      console.log('🤖 Chiamata a /api/chat/name/generate');
+      const isRefinement = titleGenerationCount > 0;
+      console.log(`🤖 ${isRefinement ? 'Raffinamento' : 'Generazione'} titolo #${titleGenerationCount + 1} dopo ${userMessageCount} messaggi user`);
 
       const response = await fetch('/api/chat/name/generate', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ sessionId }),
+        body: JSON.stringify({ 
+          sessionId,
+          isRefinement,
+          userMessageCount
+        }),
       });
 
       const result = await response.json();
 
       if (result.success) {
-        console.log(`🤖 Titolo generato: "${result.title}"`);
+        console.log(`🤖 Titolo ${isRefinement ? 'raffinato' : 'generato'}: "${result.title}"`);
+        setTitleGenerationCount(prev => prev + 1);
         
         // Notifica la sidebar per aggiornare la lista
         try {
@@ -224,13 +231,11 @@ export default function ChatSessionPage() {
         }
       } else {
         console.error('🤖 Errore nella generazione del titolo:', result.error);
-        setTitleGenerated(false); // Riprova in caso di errore
       }
     } catch (error) {
       console.error('🤖 Errore nella chiamata a generate title:', error);
-      setTitleGenerated(false); // Riprova in caso di errore
     }
-  }, [sessionId, titleGenerated]);
+  }, [sessionId, titleGenerationCount]);
 
   useEffect(() => {
     if (sessionId && agentId) {
@@ -255,14 +260,20 @@ export default function ChatSessionPage() {
       
       setLastMessageCount(messages.length);
 
-      // Genera automaticamente il titolo dopo il 2° messaggio USER
+      // Genera/raffina il titolo dopo ogni risposta dell'assistant nei primi 3 messaggi user
       const userMessages = messages.filter((msg) => msg.role === 'user');
-      if (userMessages.length === 2) {
-        console.log('🤖 2 messaggi user rilevati, genero il titolo...');
-        generateChatTitle();
+      const lastMessage = messages[messages.length - 1];
+      
+      // Genera solo se l'ultimo messaggio è dell'assistant e abbiamo 1-3 messaggi user
+      if (lastMessage?.role === 'assistant' && userMessages.length >= 1 && userMessages.length <= 3) {
+        // Genera/raffina solo se non l'abbiamo già fatto per questo numero di messaggi
+        if (titleGenerationCount < userMessages.length) {
+          console.log(`🤖 ${userMessages.length} messaggi user rilevati, ${titleGenerationCount === 0 ? 'genero' : 'raffino'} il titolo...`);
+          generateChatTitle(userMessages.length);
+        }
       }
     }
-  }, [messages, lastMessageCount, isLoadingHistory, sessionExists, saveMessage, isLoading, generateChatTitle]);
+  }, [messages, lastMessageCount, isLoadingHistory, sessionExists, saveMessage, isLoading, generateChatTitle, titleGenerationCount]);
 
   const isMessageStreaming = (message: ChatMessage): boolean => {
     if (!message.parts || !Array.isArray(message.parts)) return false;

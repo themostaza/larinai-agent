@@ -1,37 +1,44 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { createClient as createServiceClient } from '@supabase/supabase-js';
+import { createClient } from '@/lib/supabase/server';
 import { Database } from '../../../../database/database';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
-const supabase = createClient<Database>(supabaseUrl, supabaseKey);
+const supabaseService = createServiceClient<Database>(supabaseUrl, supabaseKey);
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const userId = searchParams.get('userId');
     const agentId = searchParams.get('agentId');
     const searchQuery = searchParams.get('search');
     const page = parseInt(searchParams.get('page') || '1');
     const limit = parseInt(searchParams.get('limit') || '50');
 
-    console.log(`📋 [SESSIONS] Fetching sessions - agentId: ${agentId}, search: "${searchQuery}", page: ${page}, limit: ${limit}`);
+    // Ottieni l'utente autenticato
+    const supabase = await createClient();
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return NextResponse.json(
+        { success: false, error: 'Utente non autenticato' },
+        { status: 401 }
+      );
+    }
+
+    console.log(`📋 [SESSIONS] Fetching sessions for user ${user.id} - agentId: ${agentId}, search: "${searchQuery}", page: ${page}, limit: ${limit}`);
 
     // Calcola offset per paginazione
     const offset = (page - 1) * limit;
 
-    // Query per recuperare le chat sessions con paginazione
-    let query = supabase
+    // Query per recuperare le chat sessions con paginazione (SEMPRE filtrate per user_id)
+    let query = supabaseService
       .from('chat_sessions')
       .select('id, title, created_at, updated_at, metadata', { count: 'exact' })
+      .eq('user_id', user.id) // FILTRO OBBLIGATORIO per user_id
       .order('updated_at', { ascending: false, nullsFirst: false })
       .order('created_at', { ascending: false });
-
-    // Se viene fornito un userId, filtra per quello
-    if (userId) {
-      query = query.eq('user_id', userId);
-    }
 
     // Se viene fornito un agentId, filtra per quello
     if (agentId) {
@@ -105,14 +112,35 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Ottieni l'utente autenticato
+    const supabase = await createClient();
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return NextResponse.json(
+        { success: false, error: 'Utente non autenticato' },
+        { status: 401 }
+      );
+    }
+
+    console.log(`📋 [SESSIONS] Creating/checking session ${sessionId} for user ${user.id}`);
+
     // Verifica se la sessione esiste già
-    const { data: existingSession } = await supabase
+    const { data: existingSession } = await supabaseService
       .from('chat_sessions')
-      .select('id, agent_id')
+      .select('id, agent_id, user_id')
       .eq('id', sessionId)
       .single();
 
     if (existingSession) {
+      // Verifica che la sessione appartenga all'utente corrente
+      if (existingSession.user_id !== user.id) {
+        return NextResponse.json(
+          { success: false, error: 'Non hai accesso a questa sessione' },
+          { status: 403 }
+        );
+      }
+
       return NextResponse.json({
         success: true,
         sessionId: existingSession.id,
@@ -121,14 +149,14 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Crea la nuova sessione
-    const { data: newSession, error } = await supabase
+    // Crea la nuova sessione con l'user_id corrente
+    const { data: newSession, error } = await supabaseService
       .from('chat_sessions')
       .insert({
         id: sessionId,
         agent_id: agentId,
         title: 'Nuova Conversazione',
-        user_id: null, // Per ora senza autenticazione
+        user_id: user.id, // Salva l'user_id autenticato
       })
       .select()
       .single();

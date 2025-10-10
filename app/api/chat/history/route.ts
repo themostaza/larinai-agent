@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { createClient as createServiceClient } from '@supabase/supabase-js';
+import { createClient } from '@/lib/supabase/server';
 import { Database } from '@/database/database';
 
-// Client Supabase server-side con tipi
-const supabase = createClient<Database>(
+// Client Supabase server-side con service role
+const supabaseService = createServiceClient<Database>(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY! // Usa anon key dato che non abbiamo RLS attive
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
 // GET: Carica la cronologia dei messaggi di una sessione
@@ -21,12 +22,23 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    console.log(`Loading chat history for session: ${sessionId}`);
+    // Ottieni l'utente autenticato
+    const supabase = await createClient();
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
 
-    // Controlla se la sessione esiste
-    const { data: session } = await supabase
+    if (authError || !user) {
+      return NextResponse.json(
+        { success: false, error: 'Utente non autenticato' },
+        { status: 401 }
+      );
+    }
+
+    console.log(`Loading chat history for session: ${sessionId}, user: ${user.id}`);
+
+    // Controlla se la sessione esiste e appartiene all'utente
+    const { data: session } = await supabaseService
       .from('chat_sessions')
-      .select('id, title, created_at')
+      .select('id, title, created_at, user_id')
       .eq('id', sessionId)
       .single();
 
@@ -38,8 +50,16 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    // Verifica che la sessione appartenga all'utente corrente
+    if (session.user_id !== user.id) {
+      return NextResponse.json(
+        { success: false, error: 'Non hai accesso a questa sessione' },
+        { status: 403 }
+      );
+    }
+
     // Carica i messaggi della sessione
-    const { data: messages, error } = await supabase
+    const { data: messages, error } = await supabaseService
       .from('chat_messages')
       .select('*')
       .eq('session_id', sessionId)

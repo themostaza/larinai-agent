@@ -60,6 +60,73 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
+  // Protect admin-only routes
+  if (user) {
+    const pathname = request.nextUrl.pathname
+
+    // Check if accessing admin-only routes
+    const adminRoutePatterns = [
+      /^\/agent\/[^\/]+\/board/,  // /agent/[agentId]/board
+      /^\/agent\/[^\/]+\/edit/,   // /agent/[agentId]/edit
+      /^\/back\/users/,            // /back/users
+    ]
+
+    const isAdminRoute = adminRoutePatterns.some(pattern => pattern.test(pathname))
+
+    if (isAdminRoute) {
+      // Extract agentId if present
+      const agentMatch = pathname.match(/^\/agent\/([^\/]+)\/(board|edit)/)
+      
+      if (agentMatch) {
+        const agentId = agentMatch[1]
+        
+        // Get agent's organization
+        const { data: agent } = await supabase
+          .from('agents')
+          .select('organization_id')
+          .eq('id', agentId)
+          .single()
+
+        if (agent && agent.organization_id) {
+          // Check user role in organization
+          const { data: userOrg } = await supabase
+            .from('link_organization_user')
+            .select('role')
+            .eq('user_id', user.id)
+            .eq('organization_id', agent.organization_id)
+            .single()
+
+          if (!userOrg || userOrg.role !== 'admin') {
+            // Not admin, redirect to back
+            const url = request.nextUrl.clone()
+            url.pathname = '/back'
+            return NextResponse.redirect(url)
+          }
+        } else if (agent && !agent.organization_id) {
+          // Agent without organization, redirect to back
+          const url = request.nextUrl.clone()
+          url.pathname = '/back'
+          return NextResponse.redirect(url)
+        }
+      } else if (pathname.startsWith('/back/users')) {
+        // For /back/users, check if user is admin of any organization
+        const { data: userOrgs } = await supabase
+          .from('link_organization_user')
+          .select('role')
+          .eq('user_id', user.id)
+
+        const isAdminOfAny = userOrgs?.some(org => org.role === 'admin')
+
+        if (!isAdminOfAny) {
+          // Not admin, redirect to back
+          const url = request.nextUrl.clone()
+          url.pathname = '/back'
+          return NextResponse.redirect(url)
+        }
+      }
+    }
+  }
+
   // IMPORTANT: You *must* return the supabaseResponse object as it is. If you're
   // creating a new response object with NextResponse.next() make sure to:
   // 1. Pass the request in it, like so:

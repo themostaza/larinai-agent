@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { createClient as createServiceClient } from '@supabase/supabase-js';
 import { Database } from '@/database/database';
 
-// Client Supabase server-side con tipi
-const supabase = createClient<Database>(
+// Client Supabase server-side con service role
+const supabaseService = createServiceClient<Database>(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY! // Usa anon key dato che non abbiamo RLS attive
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
 interface MessagePart {
@@ -155,7 +155,7 @@ function processMessageParts(parts: MessagePart[]): MessagePart[] {
 // Funzione per salvare un singolo messaggio
 async function saveMessage(sessionId: string, message: SaveMessageRequest['message']) {
   // Controlla se il messaggio è già stato salvato
-  const { data: existingMessage } = await supabase
+  const { data: existingMessage } = await supabaseService
     .from('chat_messages')
     .select('id')
     .eq('message_id', message.id)
@@ -170,7 +170,7 @@ async function saveMessage(sessionId: string, message: SaveMessageRequest['messa
   const processedParts = processMessageParts(message.parts || []);
 
   // Salva il messaggio SOLO con parts processate (senza dati)
-  const { data, error } = await supabase
+  const { data, error } = await supabaseService
     .from('chat_messages')
     .insert({
       session_id: sessionId,
@@ -194,15 +194,56 @@ async function saveMessage(sessionId: string, message: SaveMessageRequest['messa
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+    const sessionId = body.sessionId;
+
+    if (!sessionId) {
+      return NextResponse.json(
+        { success: false, error: 'Missing sessionId' },
+        { status: 400 }
+      );
+    }
+
+    // Importa createClient per ottenere l'utente autenticato
+    const { createClient } = await import('@/lib/supabase/server');
+    const supabase = await createClient();
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return NextResponse.json(
+        { success: false, error: 'Utente non autenticato' },
+        { status: 401 }
+      );
+    }
+
+    // Verifica che la sessione appartenga all'utente
+    const { data: session } = await supabaseService
+      .from('chat_sessions')
+      .select('user_id')
+      .eq('id', sessionId)
+      .single();
+
+    if (!session) {
+      return NextResponse.json(
+        { success: false, error: 'Sessione non trovata' },
+        { status: 404 }
+      );
+    }
+
+    if (session.user_id !== user.id) {
+      return NextResponse.json(
+        { success: false, error: 'Non hai accesso a questa sessione' },
+        { status: 403 }
+      );
+    }
     
     // Supporta sia singolo messaggio che array di messaggi
     if (body.message) {
       // Singolo messaggio
-      const { sessionId, message }: SaveMessageRequest = body;
+      const { message }: SaveMessageRequest = body;
 
-      if (!sessionId || !message || !message.id) {
+      if (!message || !message.id) {
         return NextResponse.json(
-          { success: false, error: 'Missing required fields: sessionId, message.id' },
+          { success: false, error: 'Missing required fields: message.id' },
           { status: 400 }
         );
       }
@@ -236,11 +277,11 @@ export async function POST(request: NextRequest) {
 
     } else if (body.messages) {
       // Array di messaggi
-      const { sessionId, messages }: SaveMessagesRequest = body;
+      const { messages }: SaveMessagesRequest = body;
 
-      if (!sessionId || !Array.isArray(messages)) {
+      if (!Array.isArray(messages)) {
         return NextResponse.json(
-          { success: false, error: 'Missing required fields: sessionId, messages array' },
+          { success: false, error: 'Missing required field: messages array' },
           { status: 400 }
         );
       }
@@ -306,8 +347,41 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Ottieni l'utente autenticato
+    const { createClient } = await import('@/lib/supabase/server');
+    const supabase = await createClient();
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return NextResponse.json(
+        { success: false, error: 'Utente non autenticato' },
+        { status: 401 }
+      );
+    }
+
+    // Verifica che la sessione appartenga all'utente
+    const { data: session } = await supabaseService
+      .from('chat_sessions')
+      .select('user_id')
+      .eq('id', sessionId)
+      .single();
+
+    if (!session) {
+      return NextResponse.json(
+        { success: false, error: 'Sessione non trovata' },
+        { status: 404 }
+      );
+    }
+
+    if (session.user_id !== user.id) {
+      return NextResponse.json(
+        { success: false, error: 'Non hai accesso a questa sessione' },
+        { status: 403 }
+      );
+    }
+
     // Conta i messaggi nella sessione
-    const { count, error } = await supabase
+    const { count, error } = await supabaseService
       .from('chat_messages')
       .select('*', { count: 'exact', head: true })
       .eq('session_id', sessionId);

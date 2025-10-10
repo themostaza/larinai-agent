@@ -286,22 +286,24 @@ export default function BackOfficePage() {
                           {(agent.name || 'A')[0].toUpperCase()}
                         </span>
                       </div>
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => router.push(`/agent/${agent.id}/board`)}
-                          className="p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors"
-                          title="Dashboard agent"
-                        >
-                          <BarChart3 size={18} />
-                        </button>
-                        <button
-                          onClick={() => router.push(`/agent/${agent.id}/edit`)}
-                          className="p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors"
-                          title="Modifica agent"
-                        >
-                          <Settings size={18} />
-                        </button>
-                      </div>
+                      {isAdmin && (
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => router.push(`/agent/${agent.id}/board`)}
+                            className="p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors"
+                            title="Dashboard agent"
+                          >
+                            <BarChart3 size={18} />
+                          </button>
+                          <button
+                            onClick={() => router.push(`/agent/${agent.id}/edit`)}
+                            className="p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors"
+                            title="Modifica agent"
+                          >
+                            <Settings size={18} />
+                          </button>
+                        </div>
+                      )}
                     </div>
                     
                     <h3 className="text-lg font-semibold mb-2">

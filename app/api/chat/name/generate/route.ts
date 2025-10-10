@@ -14,7 +14,7 @@ const supabase = createClient<Database>(
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { sessionId } = body;
+    const { sessionId, isRefinement = false, userMessageCount = 0 } = body;
 
     if (!sessionId) {
       return NextResponse.json(
@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log(`🤖 [NAME-GEN] Generating title for session ${sessionId}`);
+    console.log(`🤖 [NAME-GEN] ${isRefinement ? 'Refining' : 'Generating'} title for session ${sessionId} (${userMessageCount} user messages)`);
 
     // 1. Recupera i messaggi della sessione dal database
     const { data: messages, error: messagesError } = await supabase
@@ -60,15 +60,26 @@ export async function POST(request: NextRequest) {
 
     console.log(`🤖 [NAME-GEN] Conversation context length: ${conversationContext.length} chars`);
 
-    // 3. Usa GPT-5 Mini per generare il titolo
-    const { text: generatedTitle } = await generateText({
-      model: registry.languageModel('openai:gpt-5-mini'),
-      prompt: `Analizza questa conversazione e crea un titolo breve e descrittivo (massimo 50 caratteri) che catturi l'argomento principale.
+    // 3. Usa GPT-5 Mini per generare o raffinare il titolo
+    const prompt = isRefinement
+      ? `Analizza questa conversazione e RAFFINA il titolo esistente rendendolo più specifico e accurato basandoti sui nuovi dettagli emersi.
+
+Conversazione completa (${userMessageCount} messaggi utente):
+${conversationContext}
+
+Il titolo precedente potrebbe essere generico. Ora che hai più contesto, crea un titolo più specifico e descrittivo (massimo 50 caratteri) che catturi esattamente l'argomento o la richiesta principale dell'utente.
+
+Rispondi SOLO con il nuovo titolo, senza virgolette o punteggiatura finale. Deve essere conciso, chiaro e professionale.`
+      : `Analizza questa conversazione iniziale e crea un titolo breve e descrittivo (massimo 50 caratteri) che catturi l'argomento principale.
 
 Conversazione:
 ${conversationContext}
 
-Rispondi SOLO con il titolo, senza virgolette o punteggiatura finale. Deve essere conciso, chiaro e professionale.`,
+Rispondi SOLO con il titolo, senza virgolette o punteggiatura finale. Deve essere conciso, chiaro e professionale.`;
+
+    const { text: generatedTitle } = await generateText({
+      model: registry.languageModel('openai:gpt-5-mini'),
+      prompt,
       temperature: 0.7,
     });
 
@@ -84,7 +95,7 @@ Rispondi SOLO con il titolo, senza virgolette o punteggiatura finale. Deve esser
       cleanTitle = 'Nuova Conversazione';
     }
 
-    console.log(`🤖 [NAME-GEN] Generated title: "${cleanTitle}"`);
+    console.log(`🤖 [NAME-GEN] ${isRefinement ? 'Refined' : 'Generated'} title: "${cleanTitle}"`);
 
     // 4. Salva il titolo nel database chiamando l'endpoint esistente
     const baseUrl = process.env.NEXTAUTH_URL || process.env.VERCEL_URL || 'http://localhost:3000';
@@ -115,7 +126,8 @@ Rispondi SOLO con il titolo, senza virgolette o punteggiatura finale. Deve esser
       success: true,
       title: cleanTitle,
       sessionId: sessionId,
-      message: 'Chat title generated and saved successfully',
+      message: `Chat title ${isRefinement ? 'refined' : 'generated'} and saved successfully`,
+      isRefinement,
     });
 
   } catch (error) {
