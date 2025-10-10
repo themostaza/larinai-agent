@@ -24,6 +24,8 @@ interface ChatMessage {
   metadata?: Record<string, unknown>;
   createdAt?: string;
   savedToDb?: boolean;
+  thumb_up?: boolean | null;
+  thumb_down?: boolean | null;
   [key: string]: unknown;
 }
 
@@ -38,6 +40,8 @@ export default function ChatSessionPage() {
   const [sessionExists, setSessionExists] = useState(false);
   const [selectedModel, setSelectedModel] = useState<string>(DEFAULT_MODEL);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+  const [agentName, setAgentName] = useState<string>('');
+  const [organizationName, setOrganizationName] = useState<string>('');
   
   //console.log('🟢 [CLIENT] agentId:', agentId, 'sessionId:', sessionId);
   
@@ -53,6 +57,27 @@ export default function ChatSessionPage() {
   useEffect(() => {
     localStorage.setItem('selectedAIModel', selectedModel);
   }, [selectedModel]);
+
+  // Carica i dati dell'agent e organizzazione
+  useEffect(() => {
+    const fetchAgentInfo = async () => {
+      try {
+        const response = await fetch(`/api/agents/${agentId}`);
+        const data = await response.json();
+        
+        if (data.success) {
+          setAgentName(data.agent?.name || 'Agent');
+          setOrganizationName(data.organization?.name || '');
+        }
+      } catch (error) {
+        console.error('Error fetching agent info:', error);
+      }
+    };
+
+    if (agentId) {
+      fetchAgentInfo();
+    }
+  }, [agentId]);
   
   // useChat semplice - passeremo sessionId con ogni sendMessage
   const { messages, setMessages, sendMessage: baseSendMessage } = useChat();
@@ -334,6 +359,42 @@ export default function ChatSessionPage() {
       .join('');
   };
 
+  const handleFeedback = async (messageId: string, feedbackType: 'up' | 'down') => {
+    try {
+      const response = await fetch('/api/chat/feedback', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messageId,
+          feedbackType,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        // Aggiorna lo stato locale del messaggio
+        setMessages(prevMessages =>
+          prevMessages.map(msg =>
+            msg.id === messageId
+              ? {
+                  ...msg,
+                  thumb_up: result.data.thumb_up,
+                  thumb_down: result.data.thumb_down,
+                }
+              : msg
+          )
+        );
+      } else {
+        console.error('Error updating feedback:', result.error);
+      }
+    } catch (error) {
+      console.error('Error in handleFeedback:', error);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || isLoading) return;
@@ -451,8 +512,29 @@ export default function ChatSessionPage() {
         />
         
         <div className="flex-1 flex flex-col min-h-screen">
-          <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 space-y-4 pb-32 sm:pb-40 chat-container">
+          <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 space-y-4 pb-32 sm:pb-40 pt-16 sm:pt-6 chat-container">
             <div className="max-w-4xl mx-auto w-full">
+              {/* Nome agent e organizzazione */}
+              {(agentName || organizationName) && (
+                <div className="mb-6 sm:mb-8">
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+                    {agentName && (
+                      <h1 className="text-lg sm:text-xl font-bold text-white truncate">
+                        {agentName}
+                      </h1>
+                    )}
+                    {agentName && organizationName && (
+                      <span className="hidden sm:inline text-gray-500">•</span>
+                    )}
+                    {organizationName && (
+                      <p className="text-sm sm:text-base text-gray-400 truncate">
+                        {organizationName}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+              
             {messages.map((message) => (
               <div
                 key={message.id}
@@ -460,7 +542,7 @@ export default function ChatSessionPage() {
               >
                 <div className={`flex flex-col ${message.role === 'user' ? 'items-end' : 'items-start'} max-w-xs sm:max-w-md lg:max-w-lg xl:max-w-xl`}>
                   <div
-                    className={`px-4 py-2 rounded-2xl ${
+                    className={`px-3 py-1.5 rounded-lg ${
                       message.role === 'user'
                         ? 'bg-white text-black'
                         : 'bg-gray-900 text-white border border-gray-700'
@@ -526,15 +608,23 @@ export default function ChatSessionPage() {
                         )}
                       </button>
                       <button
-                        onClick={() => console.log('Thumbs up:', message.id)}
-                        className="p-1.5 text-gray-500 hover:text-green-500 hover:bg-gray-800 rounded transition-colors"
+                        onClick={() => handleFeedback(message.id, 'up')}
+                        className={`p-1.5 rounded transition-colors ${
+                          (message as ChatMessage).thumb_up
+                            ? 'text-green-500 bg-gray-800'
+                            : 'text-gray-500 hover:text-green-500 hover:bg-gray-800'
+                        }`}
                         title="Feedback positivo"
                       >
                         <ThumbsUp size={14} />
                       </button>
                       <button
-                        onClick={() => console.log('Thumbs down:', message.id)}
-                        className="p-1.5 text-gray-500 hover:text-red-500 hover:bg-gray-800 rounded transition-colors"
+                        onClick={() => handleFeedback(message.id, 'down')}
+                        className={`p-1.5 rounded transition-colors ${
+                          (message as ChatMessage).thumb_down
+                            ? 'text-red-500 bg-gray-800'
+                            : 'text-gray-500 hover:text-red-500 hover:bg-gray-800'
+                        }`}
                         title="Feedback negativo"
                       >
                         <ThumbsDown size={14} />
@@ -548,7 +638,7 @@ export default function ChatSessionPage() {
             {/* Mostra solo se non ci sono messaggi */}
             {isLoading && messages.length === 0 && (
               <div className="flex justify-start mb-4">
-                <div className="max-w-xs sm:max-w-md lg:max-w-lg xl:max-w-xl px-4 py-2 rounded-2xl bg-gray-800 text-white border border-gray-700">
+                <div className="max-w-xs sm:max-w-md lg:max-w-lg xl:max-w-xl px-3 py-1.5 rounded-lg bg-gray-800 text-white border border-gray-700">
                   <div className="flex items-center space-x-2">
                     <div className="flex space-x-1">
                       <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>

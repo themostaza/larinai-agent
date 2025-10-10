@@ -19,10 +19,16 @@ export async function GET(
       );
     }
 
-    // Ottieni l'agent
+    // Ottieni l'agent con i dati dell'organizzazione
     const { data: agent, error } = await supabase
       .from('agents')
-      .select('*')
+      .select(`
+        *,
+        organization:organization_id (
+          id,
+          name
+        )
+      `)
       .eq('id', agentId)
       .single();
 
@@ -38,6 +44,7 @@ export async function GET(
       return NextResponse.json({
         success: true,
         agent,
+        organization: null,
         userRole: null,
       });
     }
@@ -60,6 +67,7 @@ export async function GET(
     return NextResponse.json({
       success: true,
       agent,
+      organization: agent.organization,
       userRole: userOrg.role,
     });
 

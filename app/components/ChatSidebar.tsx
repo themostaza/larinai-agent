@@ -623,15 +623,6 @@ export default function ChatSidebar({ currentSessionId, agentId, onSessionSelect
                 <p className="text-gray-400 text-xs mt-1">Caricamento...</p>
               </div>
             )}
-            
-            {/* End of results indicator */}
-            {!hasMore && sessions.length > 0 && (
-              <div className="p-3 text-center">
-                <p className="text-gray-500 text-xs">
-                  {sessions.length} {sessions.length === 1 ? 'chat' : 'chat'} in totale
-                </p>
-              </div>
-            )}
           </>
           )}
         </div>

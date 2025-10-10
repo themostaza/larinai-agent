@@ -75,6 +75,8 @@ export async function GET(request: NextRequest) {
       if (msg.message_content && typeof msg.message_content === 'object') {
         return {
           ...(msg.message_content as Record<string, unknown>),
+          thumb_up: msg.thumb_up,
+          thumb_down: msg.thumb_down,
           savedToDb: true // Marca come già salvato nel DB
         };
       }
@@ -84,6 +86,8 @@ export async function GET(request: NextRequest) {
         id: msg.message_id,
         role: msg.role,
         parts: msg.parts || [],
+        thumb_up: msg.thumb_up,
+        thumb_down: msg.thumb_down,
         savedToDb: true // Marca come già salvato nel DB
       };
     }) || [];

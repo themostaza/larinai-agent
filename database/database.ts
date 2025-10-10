@@ -84,6 +84,8 @@ export type Database = {
           parts: Json
           role: string
           session_id: string | null
+          thumb_down: boolean | null
+          thumb_up: boolean | null
         }
         Insert: {
           created_at?: string | null
@@ -94,6 +96,8 @@ export type Database = {
           parts?: Json
           role: string
           session_id?: string | null
+          thumb_down?: boolean | null
+          thumb_up?: boolean | null
         }
         Update: {
           created_at?: string | null
@@ -104,6 +108,8 @@ export type Database = {
           parts?: Json
           role?: string
           session_id?: string | null
+          thumb_down?: boolean | null
+          thumb_up?: boolean | null
         }
         Relationships: [
           {
@@ -149,13 +155,6 @@ export type Database = {
             columns: ["agent_id"]
             isOneToOne: false
             referencedRelation: "agents"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "chat_sessions_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
             referencedColumns: ["id"]
           },
         ]
