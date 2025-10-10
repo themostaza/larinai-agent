@@ -19,10 +19,20 @@ export const readSqlDbTool = (agentId: string, config?: unknown) => {
   
   // Ottieni il tipo di database dalla configurazione
   const dbType = toolConfig?.database?.type || 'mssql';
+  const dbServer = toolConfig?.database?.server || 'non specificato';
+  const dbName = toolConfig?.database?.database || 'non specificato';
+  const dbPort = toolConfig?.database?.port || (dbType === 'postgresql' ? 5432 : 1433);
 
   
   const description = toolConfig?.description || `
-Esegui query SQL su database. tipologia database in uso: ${dbType}
+Esegui query SQL su database.
+
+CONFIGURAZIONE DATABASE:
+- Tipo: ${dbType}
+- Server: ${dbServer}
+- Database: ${dbName}
+- Porta: ${dbPort}
+
 Abbiamo introdotto un nuovo parametro 'aiLimit' per limitare il numero di record che puoi vedere dalla query anche se la query include molti più record.
 Per evitare saturazione della finestra di contesto, limita sempre il numero di record che ricevi specificando il parametro 'aiLimit'.
 parametro 'aiLimit' (opzionale, default 10 se non lo specifichi):

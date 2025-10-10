@@ -137,6 +137,155 @@ export async function GET(request: NextRequest) {
   }
 }
 
+// POST: Aggiungi utente (crea invito)
+export async function POST(request: NextRequest) {
+  try {
+    const { organizationId, email, role } = await request.json();
+
+    if (!organizationId || !email || !role) {
+      return NextResponse.json(
+        { success: false, error: 'organizationId, email e role sono obbligatori' },
+        { status: 400 }
+      );
+    }
+
+    if (!['admin', 'user'].includes(role)) {
+      return NextResponse.json(
+        { success: false, error: 'role deve essere "admin" o "user"' },
+        { status: 400 }
+      );
+    }
+
+    // Validazione email base
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return NextResponse.json(
+        { success: false, error: 'Email non valida' },
+        { status: 400 }
+      );
+    }
+
+    const supabase = await createClient();
+
+    // Ottieni l'utente autenticato
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return NextResponse.json(
+        { success: false, error: 'Utente non autenticato' },
+        { status: 401 }
+      );
+    }
+
+    // Verifica che l'utente sia admin dell'organizzazione
+    const { data: userOrg, error: userOrgError } = await supabase
+      .from('link_organization_user')
+      .select('role')
+      .eq('user_id', user.id)
+      .eq('organization_id', organizationId)
+      .single();
+
+    if (userOrgError || !userOrg || userOrg.role !== 'admin') {
+      return NextResponse.json(
+        { success: false, error: 'Non hai permessi di admin per questa organizzazione' },
+        { status: 403 }
+      );
+    }
+
+    // Verifica se l'email è già presente nella tabella invited_users
+    const { data: existingInvite, error: inviteCheckError } = await supabase
+      .from('invited_users')
+      .select('id, email')
+      .eq('organization_id', organizationId)
+      .eq('email', email.toLowerCase())
+      .maybeSingle();
+
+    if (inviteCheckError) {
+      console.error('Error checking existing invite:', inviteCheckError);
+      return NextResponse.json(
+        { success: false, error: 'Errore durante la verifica dell\'invito' },
+        { status: 500 }
+      );
+    }
+
+    if (existingInvite) {
+      return NextResponse.json(
+        { success: false, error: 'Questa email è già stata invitata per questa organizzazione' },
+        { status: 400 }
+      );
+    }
+
+    // Verifica se l'utente esiste già come utente registrato nell'organizzazione
+    // Usa service role per cercare utente per email
+    const supabaseAdmin = createAdminClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
+
+    const { data: { users: existingUsers }, error: userSearchError } = await supabaseAdmin.auth.admin.listUsers();
+
+    if (userSearchError) {
+      console.error('Error searching for user:', userSearchError);
+    }
+
+    // Cerca se esiste un utente con questa email
+    const existingUser = existingUsers?.find(u => u.email?.toLowerCase() === email.toLowerCase());
+
+    if (existingUser) {
+      // Verifica se è già nell'organizzazione
+      const { data: existingOrgUser, error: orgUserError } = await supabase
+        .from('link_organization_user')
+        .select('id')
+        .eq('organization_id', organizationId)
+        .eq('user_id', existingUser.id)
+        .maybeSingle();
+
+      if (orgUserError) {
+        console.error('Error checking organization user:', orgUserError);
+      }
+
+      if (existingOrgUser) {
+        return NextResponse.json(
+          { success: false, error: 'Questo utente è già membro dell\'organizzazione' },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Crea l'invito nella tabella invited_users
+    const { error: insertError } = await supabase
+      .from('invited_users')
+      .insert({
+        organization_id: organizationId,
+        email: email.toLowerCase(),
+        role: role,
+      });
+
+    if (insertError) {
+      console.error('Error creating invite:', insertError);
+      return NextResponse.json(
+        { success: false, error: 'Errore nella creazione dell\'invito' },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: 'Invito creato con successo',
+    });
+
+  } catch (error) {
+    console.error('Error in add user API:', error);
+    return NextResponse.json(
+      { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Errore interno del server' 
+      },
+      { status: 500 }
+    );
+  }
+}
+
 // DELETE: Rimuovi utente da organizzazione
 export async function DELETE(request: NextRequest) {
   try {
