@@ -23,10 +23,8 @@ export const readSqlDbTool = (agentId: string, config?: unknown) => {
   const dbName = toolConfig?.database?.database || 'non specificato';
   const dbPort = toolConfig?.database?.port || (dbType === 'postgresql' ? 5432 : 1433);
 
-  
-  const description = toolConfig?.description || `
-Esegui query SQL su database.
-
+  // Costruisci la descrizione base con informazioni dinamiche del database
+  const baseDescription = `
 CONFIGURAZIONE DATABASE:
 - Tipo: ${dbType}
 - Server: ${dbServer}
@@ -60,7 +58,16 @@ parametro 'aiLimit' (opzionale, default 10 se non lo specifichi):
   Non serve fare COUNT separato o modificare la query - tutto gestito automaticamente!
   Sii efficiente nel numero di query da eseguire per rispondere all'utente.
 
-  Esempio: se ti chiedono di restituire tutti i dati della tabella 'ordini', la query SQL da eseguire sarà: "SELECT * FROM ordini" perché il totale lo calcoliamo in automatico così come la struttura delle colonne. `;
+  Esempio: se ti chiedono di restituire tutti i dati della tabella 'ordini', la query SQL da eseguire sarà: "SELECT * FROM ordini" perché il totale lo calcoliamo in automatico così come la struttura delle colonne.`;
+
+  // Se c'è una descrizione personalizzata, la usiamo come intestazione, altrimenti usiamo quella di default
+  const customDescription = toolConfig?.description || 'Esegui query SQL su database.';
+  
+  // Combina descrizione personalizzata + informazioni dinamiche
+  const description = `${customDescription}\n${baseDescription}`;
+
+  // Log della descrizione finale per debug
+  console.log('📋 [SQL-TOOL] Descrizione finale per l\'AI:', description);
 
   return tool({
     description,
