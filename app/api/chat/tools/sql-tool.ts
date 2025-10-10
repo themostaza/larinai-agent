@@ -72,12 +72,11 @@ parametro 'aiLimit' (opzionale, default 10 se non lo specifichi):
   return tool({
     description,
     inputSchema: z.object({
-      database: z.string().optional().describe('Il nome del database su cui eseguire la query (opzionale, usa il default se non specificato)'),
       query: z.string().describe('La query SQL da eseguire.'),
       purpose: z.string().describe('Breve descrizione dello scopo della query'),
       aiLimit: z.number().optional().describe('Quanti record MASSIMO vuoi ricevere per la tua lettura.')
     }),
-    execute: async ({ database, query, purpose, aiLimit }) => {
+    execute: async ({ query, purpose, aiLimit }) => {
     
     try {
       const baseUrl = process.env.NEXTAUTH_URL || process.env.VERCEL_URL || 'http://localhost:3000';
@@ -90,7 +89,7 @@ parametro 'aiLimit' (opzionale, default 10 se non lo specifichi):
         },
         body: JSON.stringify({
           agentId,
-          database,
+          // database non viene più passato dall'AI, verrà usato quello configurato nell'agent
           query,
           purpose,
           aiLimit: aiLimit || 10  // Default automatico: 10 se non specificato
@@ -102,7 +101,6 @@ parametro 'aiLimit' (opzionale, default 10 se non lo specifichi):
       if (!response.ok) {
         //console.log(`🔧 [SQL-TOOL] Response not ok: ${response.status} ${response.statusText}`);
         return {
-          database,
           query,
           purpose,
           error: `HTTP ${response.status}: ${response.statusText}`,
@@ -116,7 +114,6 @@ parametro 'aiLimit' (opzionale, default 10 se non lo specifichi):
       if (!result.success) {
         //console.log(`🔧 [SQL-TOOL] Query failed:`, result.error);
         return {
-          database,
           query,
           purpose,
           error: result.error,
@@ -142,7 +139,6 @@ parametro 'aiLimit' (opzionale, default 10 se non lo specifichi):
     } catch (error) {
       //console.error('🔧 [SQL-TOOL] Error calling query API:', error);
       const errorResult = {
-        database,
         query,
         purpose,
         error: `Errore nella chiamata API: ${error instanceof Error ? error.message : 'Errore sconosciuto'}`,
