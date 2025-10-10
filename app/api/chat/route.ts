@@ -1,5 +1,6 @@
 import { streamText, UIMessage, convertToModelMessages, stepCountIs } from 'ai';
 import { readSqlDbTool } from './tools/sql-tool';
+import { textSearchTool } from './tools/text-search-tool';
 import { createClient } from '@/lib/supabase/server';
 import { registry, DEFAULT_MODEL, isValidModel } from '@/lib/ai/models';
 
@@ -95,6 +96,8 @@ CONTESTO TEMPORALE CORRENTE:
           // Crea il tool con la configurazione specifica
           if (toolName === 'sql-tool') {
             enabledTools['read_sql_db'] = readSqlDbTool(agentId, toolSettings.config);
+          } else if (toolName === 'text-search') {
+            enabledTools['search_document'] = textSearchTool(toolSettings.config);
           }
           // Aggiungi altri tool qui quando disponibili
         }

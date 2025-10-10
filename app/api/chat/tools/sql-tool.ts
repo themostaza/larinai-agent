@@ -72,9 +72,9 @@ parametro 'aiLimit' (opzionale, default 10 se non lo specifichi):
   return tool({
     description,
     inputSchema: z.object({
-      query: z.string().describe('La query SQL da eseguire.'),
+      query: z.string().describe(`La query da eseguire in base al type: ${dbType}`),
       purpose: z.string().describe('Breve descrizione dello scopo della query'),
-      aiLimit: z.number().optional().describe('Quanti record MASSIMO vuoi ricevere per la tua lettura.')
+      aiLimit: z.number().optional().describe('Quanti record MASSIMO vuoi ricevere per la tua lettura. sii conservativo pewr non bruciare contesto.')
     }),
     execute: async ({ query, purpose, aiLimit }) => {
     

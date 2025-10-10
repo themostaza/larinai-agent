@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { ArrowLeft, Save, Loader2, Database, FileText, X, ExternalLink } from 'lucide-react';
 
@@ -20,7 +20,7 @@ interface AgentSettings {
 
 interface ToolConfig {
   enabled: boolean;
-  config?: SQLToolConfig | Record<string, unknown>;
+  config?: SQLToolConfig | TextSearchToolConfig | Record<string, unknown>;
 }
 
 interface SQLToolConfig {
@@ -40,6 +40,41 @@ interface SQLToolConfig {
   };
 }
 
+interface TextSearchToolConfig {
+  description: string;
+  documentContent: string;
+  title: string;
+}
+
+interface DbSchemaColumn {
+  name: string;
+  type: string;
+  nullable: boolean;
+  default: string | null;
+  description: string;
+  isPrimaryKey: boolean;
+}
+
+interface DbSchemaForeignKey {
+  column: string;
+  referencesTable: string;
+  referencesColumn: string;
+}
+
+interface DbSchemaTable {
+  schema: string;
+  name: string;
+  description: string;
+  columns: DbSchemaColumn[];
+  foreignKeys: DbSchemaForeignKey[];
+}
+
+interface DbSchema {
+  database: string;
+  type: string;
+  tables: DbSchemaTable[];
+}
+
 interface AvailableTool {
   id: string;
   name: string;
@@ -55,9 +90,9 @@ const AVAILABLE_TOOLS: AvailableTool[] = [
     icon: Database,
   },
   {
-    id: 'documents-rag',
-    name: 'Documents RAG',
-    description: 'Ricerca semantica nei documenti',
+    id: 'text-search',
+    name: 'Text Search',
+    description: 'Ricerca informazioni testuali in documenti lunghi senza consumare contesto',
     icon: FileText,
   },
 ];
@@ -70,6 +105,7 @@ export default function AgentEditPage() {
   const [agent, setAgent] = useState<Agent | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
   const [error, setError] = useState('');
 
   // Form state
@@ -90,11 +126,7 @@ export default function AgentEditPage() {
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [toolToDisable, setToolToDisable] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchAgent();
-  }, [agentId]);
-
-  const fetchAgent = async () => {
+  const fetchAgent = useCallback(async () => {
     try {
       setIsLoading(true);
       const response = await fetch(`/api/agents/${agentId}`);
@@ -121,7 +153,11 @@ export default function AgentEditPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [agentId]);
+
+  useEffect(() => {
+    fetchAgent();
+  }, [fetchAgent]);
 
   // Check if there are unsaved changes
   const hasChanges = () => {
@@ -165,8 +201,9 @@ export default function AgentEditPage() {
       setOriginalSystemPrompt(systemPrompt);
       setOriginalToolsConfig(toolsConfig);
       
-      alert('Agent salvato con successo!');
+      setSaveSuccess(true);
       setIsSaving(false);
+      setTimeout(() => setSaveSuccess(false), 3000);
     } catch (err) {
       console.error('Error saving agent:', err);
       setError('Errore di connessione');
@@ -213,7 +250,7 @@ export default function AgentEditPage() {
     setToolToDisable(null);
   };
 
-  const getDefaultConfig = (toolId: string): SQLToolConfig | Record<string, unknown> => {
+  const getDefaultConfig = (toolId: string): SQLToolConfig | TextSearchToolConfig | Record<string, unknown> => {
     if (toolId === 'sql-tool') {
       return {
         description: 'Esegui query SQL sui database aziendali per ottenere dati per l\'utente e aiutare nella comprensione.',
@@ -231,6 +268,13 @@ export default function AgentEditPage() {
         },
       };
     }
+    if (toolId === 'text-search') {
+      return {
+        description: 'Cerca informazioni specifiche all\'interno di documenti testuali lunghi senza dover caricare l\'intero documento nel contesto.',
+        documentContent: '',
+        title: ''
+      };
+    }
     return {};
   };
 
@@ -239,17 +283,47 @@ export default function AgentEditPage() {
     setShowConfigSheet(true);
   };
 
-  const handleSaveToolConfig = (config: SQLToolConfig | Record<string, unknown>) => {
+  const handleSaveToolConfig = async (config: SQLToolConfig | TextSearchToolConfig | Record<string, unknown>) => {
     if (currentToolId) {
-      setToolsConfig(prev => ({
-        ...prev,
+      const updatedToolsConfig = {
+        ...toolsConfig,
         [currentToolId]: {
-          ...prev[currentToolId],
+          ...toolsConfig[currentToolId],
           config,
         },
-      }));
+      };
+      
+      // Salva immediatamente sul database
+      try {
+        const response = await fetch(`/api/agents/${agentId}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            name,
+            system_prompt: systemPrompt,
+            settings: {
+              ...(agent?.settings || {}),
+              tools: updatedToolsConfig,
+            },
+          }),
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+          setToolsConfig(updatedToolsConfig);
+          setOriginalToolsConfig(updatedToolsConfig);
+          setShowConfigSheet(false);
+        } else {
+          alert(`Errore nel salvataggio: ${data.error}`);
+        }
+      } catch (err) {
+        console.error('Error saving tool config:', err);
+        alert('Errore di connessione durante il salvataggio');
+      }
     }
-    setShowConfigSheet(false);
   };
 
   if (isLoading) {
@@ -314,13 +388,18 @@ export default function AgentEditPage() {
 
               <button
                 onClick={handleSave}
-                disabled={isSaving || !hasChanges()}
+                disabled={isSaving || saveSuccess || !hasChanges()}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-white text-black text-sm font-medium rounded-lg hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
               >
                 {isSaving ? (
                   <>
                     <Loader2 className="animate-spin" size={16} />
                     Salvataggio...
+                  </>
+                ) : saveSuccess ? (
+                  <>
+                    <span className="text-green-600">✓</span>
+                    Salvato!
                   </>
                 ) : (
                   <>
@@ -365,7 +444,7 @@ export default function AgentEditPage() {
               {AVAILABLE_TOOLS.map((tool) => {
                 const Icon = tool.icon;
                 const isEnabled = toolsConfig[tool.id]?.enabled || false;
-                const hasConfig = tool.id === 'sql-tool';
+                const hasConfig = tool.id === 'sql-tool' || tool.id === 'text-search';
 
                 return (
                   <div
@@ -423,6 +502,14 @@ export default function AgentEditPage() {
         />
       )}
 
+      {showConfigSheet && currentToolId === 'text-search' && (
+        <TextSearchToolConfigSheet
+          config={(toolsConfig['text-search']?.config as TextSearchToolConfig) || getDefaultConfig('text-search') as TextSearchToolConfig}
+          onSave={handleSaveToolConfig}
+          onClose={() => setShowConfigSheet(false)}
+        />
+      )}
+
       {/* Confirmation Dialog */}
       {showConfirmDialog && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -463,18 +550,56 @@ function SQLToolConfigSheet({ config, onSave, onClose }: SQLToolConfigSheetProps
   const [formData, setFormData] = useState<SQLToolConfig>(config);
   const [originalFormData] = useState<SQLToolConfig>(config);
   const [isSaving, setIsSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [isTestingConnection, setIsTestingConnection] = useState(false);
+  const [showSchemaDialog, setShowSchemaDialog] = useState(false);
+  const [dbSchema, setDbSchema] = useState<DbSchema | null>(null);
+  const [isCopied, setIsCopied] = useState(false);
 
   // Check if there are unsaved changes
   const hasChanges = () => {
     return JSON.stringify(formData) !== JSON.stringify(originalFormData);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!hasChanges() || isSaving) return;
     
     setIsSaving(true);
-    onSave(formData);
-    // Il setIsSaving(false) non serve perché il componente si chiuderà
+    await onSave(formData);
+    setSaveSuccess(true);
+    setIsSaving(false);
+    setTimeout(() => {
+      setSaveSuccess(false);
+      // Il componente si chiuderà dopo aver mostrato il successo
+    }, 1500);
+  };
+
+  const handleTestConnection = async () => {
+    setIsTestingConnection(true);
+    try {
+      const agentId = window.location.pathname.split('/')[2]; // Estrai agentId dall'URL
+      const response = await fetch(`/api/agents/${agentId}/tools/test-db`);
+      const data = await response.json();
+
+      if (data.success) {
+        setDbSchema(data.schema);
+        setShowSchemaDialog(true);
+      } else {
+        alert(`Errore: ${data.error}`);
+      }
+    } catch (error) {
+      alert(`Errore nella connessione: ${error instanceof Error ? error.message : 'Errore sconosciuto'}`);
+    } finally {
+      setIsTestingConnection(false);
+    }
+  };
+
+  const copySchemaJSON = () => {
+    if (dbSchema) {
+      navigator.clipboard.writeText(JSON.stringify(dbSchema, null, 2));
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 2000);
+    }
   };
 
   return (
@@ -488,13 +613,18 @@ function SQLToolConfigSheet({ config, onSave, onClose }: SQLToolConfigSheetProps
             <button
               type="button"
               onClick={handleSave}
-              disabled={isSaving || !hasChanges()}
+              disabled={isSaving || saveSuccess || !hasChanges()}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-white text-black text-sm font-medium rounded-lg hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
             >
               {isSaving ? (
                 <>
                   <Loader2 className="animate-spin" size={16} />
                   Salvataggio...
+                </>
+              ) : saveSuccess ? (
+                <>
+                  <span className="text-green-600">✓</span>
+                  Salvato!
                 </>
               ) : (
                 <>
@@ -722,6 +852,304 @@ function SQLToolConfigSheet({ config, onSave, onClose }: SQLToolConfigSheetProps
                       className="w-full px-4 py-2 bg-gray-900 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-white text-sm"
                     />
                   </div>
+                </div>
+              </div>
+
+              {/* Test Database Connection Button */}
+              <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 mt-4">
+                <button
+                  type="button"
+                  onClick={handleTestConnection}
+                  disabled={isTestingConnection}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-white text-black font-medium rounded-lg hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isTestingConnection ? (
+                    <>
+                      <Loader2 className="animate-spin" size={20} />
+                      Test connessione in corso...
+                    </>
+                  ) : (
+                    <>
+                      <Database size={20} />
+                      Test Database Connection
+                    </>
+                  )}
+                </button>
+                <p className="text-xs text-gray-400 mt-2 text-center">
+                  Testa la connessione ed estrai lo schema completo del database
+                </p>
+              </div>
+            </div>
+          </div>
+        </form>
+      </div>
+
+      {/* Schema Dialog */}
+      {showSchemaDialog && dbSchema && (
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+          <div className="bg-gray-900 rounded-lg border border-gray-800 overflow-hidden" style={{ width: '70vw', height: '95vh' }}>
+            <div className="bg-gray-800 border-b border-gray-700 p-4 flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-bold text-white">Schema Database: {dbSchema.database}</h3>
+                <p className="text-sm text-gray-400">{dbSchema.tables.length} tabelle trovate</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={copySchemaJSON}
+                  disabled={isCopied}
+                  className="flex items-center gap-2 px-3 py-1.5 bg-white text-black text-sm font-medium rounded-lg hover:bg-gray-100 transition-colors disabled:opacity-100"
+                >
+                  {isCopied ? (
+                    <>
+                      <span className="text-green-600">✓</span>
+                      Copiato!
+                    </>
+                  ) : (
+                    <>
+                      <FileText size={16} />
+                      Copia Schema JSON
+                    </>
+                  )}
+                </button>
+                <button
+                  onClick={() => setShowSchemaDialog(false)}
+                  className="p-2 text-gray-400 hover:text-white transition-colors"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+            
+            <div className="overflow-y-auto p-6" style={{ height: 'calc(95vh - 80px)' }}>
+              <div className="prose prose-invert max-w-none">
+                {dbSchema.tables.map((table, idx) => (
+                  <div key={idx} className="mb-8 bg-gray-800 rounded-lg p-4 border border-gray-700">
+                    <h3 className="text-xl font-bold text-white mb-2">
+                      {table.schema}.{table.name}
+                    </h3>
+                    {table.description && (
+                      <p className="text-sm text-gray-400 mb-4 italic">
+                        📝 {table.description}
+                      </p>
+                    )}
+                    
+                    <h4 className="text-lg font-semibold text-white mt-4 mb-2">Colonne</h4>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b border-gray-600">
+                            <th className="text-left py-2 px-3 text-gray-300">Nome</th>
+                            <th className="text-left py-2 px-3 text-gray-300">Tipo</th>
+                            <th className="text-left py-2 px-3 text-gray-300">Nullable</th>
+                            <th className="text-left py-2 px-3 text-gray-300">Default</th>
+                            <th className="text-left py-2 px-3 text-gray-300">Descrizione</th>
+                            <th className="text-center py-2 px-3 text-gray-300">PK</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {table.columns.map((col, colIdx) => (
+                            <tr key={colIdx} className="border-b border-gray-700">
+                              <td className="py-2 px-3 text-white font-mono">{col.name}</td>
+                              <td className="py-2 px-3 text-gray-300 font-mono">{col.type}</td>
+                              <td className="py-2 px-3 text-center">{col.nullable ? '✓' : '✗'}</td>
+                              <td className="py-2 px-3 text-gray-400 font-mono text-xs">{col.default || '-'}</td>
+                              <td className="py-2 px-3 text-gray-400 text-xs">{col.description || '-'}</td>
+                              <td className="py-2 px-3 text-center">{col.isPrimaryKey && '🔑'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {table.foreignKeys && table.foreignKeys.length > 0 && (
+                      <>
+                        <h4 className="text-lg font-semibold text-white mt-4 mb-2">Foreign Keys</h4>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="border-b border-gray-600">
+                                <th className="text-left py-2 px-3 text-gray-300">Colonna</th>
+                                <th className="text-left py-2 px-3 text-gray-300">Riferisce</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {table.foreignKeys.map((fk, fkIdx) => (
+                                <tr key={fkIdx} className="border-b border-gray-700">
+                                  <td className="py-2 px-3 text-white font-mono">{fk.column}</td>
+                                  <td className="py-2 px-3 text-gray-300 font-mono">
+                                    {fk.referencesTable}.{fk.referencesColumn}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Text Search Tool Configuration Sheet Component
+interface TextSearchToolConfigSheetProps {
+  config: TextSearchToolConfig;
+  onSave: (config: TextSearchToolConfig) => void;
+  onClose: () => void;
+}
+
+function TextSearchToolConfigSheet({ config, onSave, onClose }: TextSearchToolConfigSheetProps) {
+  const [formData, setFormData] = useState<TextSearchToolConfig>(config);
+  const [originalFormData] = useState<TextSearchToolConfig>(config);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+
+  // Funzione per estrarre il titolo dal contenuto
+  const extractTitle = (content: string): string => {
+    const lines = content.split('\n');
+    
+    // Cerca nelle prime 10 righe una riga che contiene **testo**
+    for (let i = 0; i < Math.min(10, lines.length); i++) {
+      const line = lines[i].trim();
+      const match = line.match(/\*\*(.+?)\*\*/);
+      if (match && match[1]) {
+        return match[1].trim();
+      }
+    }
+    
+    return '';
+  };
+
+  // Check if there are unsaved changes
+  const hasChanges = () => {
+    return JSON.stringify(formData) !== JSON.stringify(originalFormData);
+  };
+
+  const handleSave = async () => {
+    if (!hasChanges() || isSaving) return;
+    
+    setIsSaving(true);
+    
+    // Estrai il titolo dal contenuto prima di salvare
+    const title = extractTitle(formData.documentContent);
+    const configToSave = {
+      ...formData,
+      title
+    };
+    
+    await onSave(configToSave);
+    setSaveSuccess(true);
+    setIsSaving(false);
+    setTimeout(() => {
+      setSaveSuccess(false);
+    }, 1500);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex justify-end">
+      <div className="w-full lg:w-5/6 bg-gray-900 border-l border-gray-800 overflow-y-auto">
+        <div className="sticky top-0 bg-gray-900 border-b border-gray-800 p-6 flex items-center justify-between z-10">
+          <div>
+            <h2 className="text-xl font-bold text-white">Configura Text Search</h2>
+            <p className="text-sm text-gray-400 mt-1">Carica un documento testuale per permettere all&apos;AI di cercarlo. Inizia il documento con **Titolo** per identificarlo.</p>
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={isSaving || saveSuccess || !hasChanges()}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-white text-black text-sm font-medium rounded-lg hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+            >
+              {isSaving ? (
+                <>
+                  <Loader2 className="animate-spin" size={16} />
+                  Salvataggio...
+                </>
+              ) : saveSuccess ? (
+                <>
+                  <span className="text-green-600">✓</span>
+                  Salvato!
+                </>
+              ) : (
+                <>
+                  <Save size={16} />
+                  Salva
+                </>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-2 text-gray-400 hover:text-white transition-colors"
+            >
+              <X size={20} />
+            </button>
+          </div>
+        </div>
+
+        <form onSubmit={(e) => { e.preventDefault(); handleSave(); }} className="p-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6" style={{ minHeight: 'calc(100vh - 140px)' }}>
+            {/* Left Column - Description */}
+            <div className="space-y-6">
+              <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 h-full flex flex-col">
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Descrizione Tool *
+                </label>
+                <textarea
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  required
+                  className="flex-1 w-full px-4 py-3 bg-gray-900 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-white text-sm resize-none min-h-[600px]"
+                  placeholder="Descrivi cosa contiene il documento e quando l'AI dovrebbe cercarlo...&#10;&#10;Esempio:&#10;Cerca informazioni nel manuale utente del software aziendale quando l'utente ha domande su come utilizzare funzionalità specifiche."
+                />
+                <p className="text-xs text-gray-500 mt-2">
+                  Questa descrizione viene fornita all&apos;AI per capire quando e come usare questo tool
+                </p>
+              </div>
+            </div>
+
+            {/* Right Column - Document Content */}
+            <div className="space-y-6">
+              <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 h-full flex flex-col">
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Contenuto Documento *
+                </label>
+                <textarea
+                  value={formData.documentContent}
+                  onChange={(e) => setFormData({ ...formData, documentContent: e.target.value })}
+                  required
+                  className="flex-1 w-full px-4 py-3 bg-gray-900 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-white text-sm resize-none min-h-[600px] font-mono"
+                  placeholder="**Titolo del Documento**&#10;&#10;Incolla qui il contenuto del documento testuale...&#10;&#10;Puoi incollare:&#10;- Manuali utente&#10;- Policy aziendali&#10;- FAQ&#10;- Documentazione tecnica&#10;- Guide operative&#10;- Qualsiasi testo lungo che vuoi rendere ricercabile dall'AI&#10;&#10;IMPORTANTE: Inizia il documento con **Titolo** per identificarlo automaticamente."
+                />
+                <div className="mt-2 space-y-1">
+                  <p className="text-xs text-gray-500">
+                    L&apos;AI potrà cercare informazioni specifiche in questo documento senza dover caricare tutto il testo nel contesto
+                  </p>
+                  {formData.documentContent && (
+                    <>
+                      <p className="text-xs text-blue-400">
+                        Caratteri: {formData.documentContent.length.toLocaleString()} | Righe: {formData.documentContent.split('\n').length.toLocaleString()}
+                      </p>
+                      {(() => {
+                        const detectedTitle = extractTitle(formData.documentContent);
+                        return detectedTitle ? (
+                          <p className="text-xs text-green-400">
+                            📄 Titolo rilevato: &quot;{detectedTitle}&quot;
+                          </p>
+                        ) : (
+                          <p className="text-xs text-yellow-400">
+                            ⚠️ Nessun titolo rilevato. Inizia il documento con **Titolo** per identificarlo.
+                          </p>
+                        );
+                      })()}
+                    </>
+                  )}
                 </div>
               </div>
             </div>
