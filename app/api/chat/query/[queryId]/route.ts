@@ -105,7 +105,6 @@ export async function GET(
         message: {
           id: messageData.id,
           role: messageData.role,
-          createdAt: messageData.createdAt,
           dbId: message.id // ID della riga nella tabella chat_messages
         },
         session: session ? {

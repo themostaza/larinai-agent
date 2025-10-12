@@ -4,6 +4,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useChat } from '@ai-sdk/react';
 import { useParams } from 'next/navigation';
 import DatabaseQueryButton from '../../../components/DatabaseQueryButton';
+import TextSearchIndicator from '../../../components/TextSearchIndicator';
+import TextSearchSidebar from '../../../components/TextSearchSidebar';
 import ChatSidebar from '../../../components/ChatSidebar';
 import MarkdownMessage from '../../../components/MarkdownMessage';
 import { AVAILABLE_MODELS, DEFAULT_MODEL } from '@/lib/ai/models';
@@ -14,6 +16,10 @@ interface MessagePart {
   text?: string;
   state?: string;
   toolCallId?: string;
+  input?: Record<string, unknown>;
+  args?: Record<string, unknown>;
+  output?: Record<string, unknown>;
+  result?: Record<string, unknown>;
   [key: string]: unknown;
 }
 
@@ -42,6 +48,25 @@ export default function ChatSessionPage() {
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [agentName, setAgentName] = useState<string>('');
   const [organizationName, setOrganizationName] = useState<string>('');
+  
+  // Text Search Sidebar states
+  const [isTextSearchSidebarOpen, setIsTextSearchSidebarOpen] = useState(false);
+  const [textSearchSidebarWidth, setTextSearchSidebarWidth] = useState(30);
+  const [currentSearchData, setCurrentSearchData] = useState<{
+    searchQuery: string;
+    documentName: string;
+    matchesFound: number;
+    matchesReturned?: number;
+    matches?: Array<{
+      lineNumber: number;
+      matchedLine: string;
+      context: string;
+    }>;
+    hasMore?: boolean;
+    note?: string;
+    success: boolean;
+    error?: string;
+  } | null>(null);
   
   //console.log('🟢 [CLIENT] agentId:', agentId, 'sessionId:', sessionId);
   
@@ -359,6 +384,28 @@ export default function ChatSessionPage() {
       .join('');
   };
 
+  const handleOpenTextSearch = (part: MessagePart) => {
+    const input = (part.input || part.args || {}) as Record<string, unknown>;
+    const output = (part.output || part.result || {}) as Record<string, unknown>;
+    
+    setCurrentSearchData({
+      searchQuery: (input.searchQuery as string) || '',
+      documentName: (output.documentName as string) || 'documento',
+      matchesFound: (output.matchesFound as number) || 0,
+      matchesReturned: output.matchesReturned as number | undefined,
+      matches: output.matches as Array<{
+        lineNumber: number;
+        matchedLine: string;
+        context: string;
+      }> | undefined,
+      hasMore: output.hasMore as boolean | undefined,
+      note: output.note as string | undefined,
+      success: output.success !== false,
+      error: output.error as string | undefined
+    });
+    setIsTextSearchSidebarOpen(true);
+  };
+
   const handleFeedback = async (messageId: string, feedbackType: 'up' | 'down') => {
     try {
       const response = await fetch('/api/chat/feedback', {
@@ -582,6 +629,14 @@ export default function ChatSessionPage() {
                                 partIndex={i}
                               />
                             );
+                          case 'tool-search_document':
+                            return (
+                              <TextSearchIndicator
+                                key={`${message.id}-${i}`}
+                                part={part}
+                                onClick={() => handleOpenTextSearch(part as MessagePart)}
+                              />
+                            );
                           case 'step-start':
                           case 'reasoning':
                             return null;
@@ -687,6 +742,17 @@ export default function ChatSessionPage() {
           </div>
         </div>
       </div>
+
+      {/* Text Search Sidebar */}
+      {currentSearchData && (
+        <TextSearchSidebar
+          isOpen={isTextSearchSidebarOpen}
+          onClose={() => setIsTextSearchSidebarOpen(false)}
+          searchData={currentSearchData}
+          width={textSearchSidebarWidth}
+          onWidthChange={setTextSearchSidebarWidth}
+        />
+      )}
     </>
   );
 }

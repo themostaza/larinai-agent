@@ -11,6 +11,8 @@ export async function POST(request: NextRequest) {
   try {
     const { chatMessageId, agentId } = await request.json();
 
+    console.log('🔄 [REFRESH] Request received:', { chatMessageId, agentId });
+
     if (!chatMessageId) {
       return NextResponse.json(
         { success: false, error: 'chatMessageId is required' },
@@ -26,17 +28,25 @@ export async function POST(request: NextRequest) {
     }
 
     // Prova prima dalla tabella query_saved (query salvate tra i preferiti)
-    const { data: savedQuery } = await supabase
+    console.log('🔍 [REFRESH] Searching in query_saved for chatMessageId:', chatMessageId);
+    const { data: savedQuery, error: savedQueryError } = await supabase
       .from('query_saved')
       .select('query, body')
       .eq('chat_message_id', chatMessageId)
       .single();
+
+    console.log('📊 [REFRESH] query_saved result:', { 
+      found: !!savedQuery, 
+      error: savedQueryError?.message,
+      query: savedQuery?.query 
+    });
 
     let queryToExecute = null;
     let database = null;
 
     if (savedQuery) {
       // Query trovata tra i preferiti
+      console.log('✅ [REFRESH] Query found in saved queries');
       queryToExecute = savedQuery.query;
       
       if (savedQuery.body && typeof savedQuery.body === 'object') {
@@ -48,11 +58,18 @@ export async function POST(request: NextRequest) {
       }
     } else {
       // Query NON salvata, prendi dalla tabella chat_messages
-      const { data: chatMessage } = await supabase
+      console.log('⚠️ [REFRESH] Not in saved queries, searching in chat_messages for id:', chatMessageId);
+      const { data: chatMessage, error: chatMessageError } = await supabase
         .from('chat_messages')
         .select('parts')
         .eq('id', chatMessageId)
         .single();
+
+      console.log('📨 [REFRESH] chat_messages result:', { 
+        found: !!chatMessage,
+        error: chatMessageError?.message,
+        hasParts: !!(chatMessage?.parts)
+      });
 
       if (chatMessage && chatMessage.parts) {
         // Cerca la part di tipo tool-read_sql_db
@@ -62,21 +79,45 @@ export async function POST(request: NextRequest) {
           output?: { query?: string; database?: string };
         }>;
         
-        const toolPart = parts.find(p => p.type && p.type.startsWith('tool-'));
+        console.log('🔍 [REFRESH] Parts found:', parts.length);
+        console.log('📋 [REFRESH] Part types:', parts.map(p => p.type));
+        
+        // Cerca SPECIFICAMENTE il tool SQL, non il primo tool generico
+        const toolPart = parts.find(p => p.type === 'tool-read_sql_db');
+        
+        console.log('🔧 [REFRESH] SQL Tool part found:', { 
+          found: !!toolPart, 
+          type: toolPart?.type,
+          hasQuery: !!(toolPart?.input?.query || toolPart?.output?.query),
+          hasDatabase: !!(toolPart?.input?.database || toolPart?.output?.database)
+        });
         
         if (toolPart) {
           queryToExecute = toolPart.input?.query || toolPart.output?.query || null;
           database = toolPart.input?.database || toolPart.output?.database || null;
+          console.log('✅ [REFRESH] Extracted from tool part:', { 
+            queryLength: queryToExecute?.length, 
+            database 
+          });
         }
+      } else {
+        console.log('❌ [REFRESH] No chat message found or no parts available');
       }
     }
 
     if (!queryToExecute) {
+      console.log('❌ [REFRESH] No query to execute - returning 404');
       return NextResponse.json(
         { success: false, error: 'Query not found in saved queries or chat messages' },
         { status: 404 }
       );
     }
+
+    console.log('🚀 [REFRESH] Executing query:', { 
+      queryLength: queryToExecute.length, 
+      database,
+      agentId 
+    });
 
     // Esegui la query tramite l'API esistente
     // aiLimit: -1 per ottenere TUTTI i dati disponibili (per refresh completo)
@@ -97,7 +138,14 @@ export async function POST(request: NextRequest) {
 
     const queryResult = await queryResponse.json();
 
+    console.log('📊 [REFRESH] Query execution result:', { 
+      success: queryResult.success,
+      rowCount: queryResult.data?.rowCount,
+      error: queryResult.error
+    });
+
     if (!queryResult.success) {
+      console.log('❌ [REFRESH] Query execution failed:', queryResult.error);
       return NextResponse.json(
         { 
           success: false, 
@@ -107,6 +155,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    console.log('✅ [REFRESH] Successfully refreshed data, returning results');
+    
     // Ritorna i nuovi dati
     return NextResponse.json({
       success: true,
@@ -120,7 +170,11 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error('Error refreshing query:', error);
+    console.error('💥 [REFRESH] Error refreshing query:', error);
+    console.error('💥 [REFRESH] Error details:', {
+      message: error instanceof Error ? error.message : 'Unknown',
+      stack: error instanceof Error ? error.stack : undefined
+    });
     return NextResponse.json(
       { 
         success: false, 

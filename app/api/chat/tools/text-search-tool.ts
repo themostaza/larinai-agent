@@ -104,24 +104,19 @@ QUANDO USARLO:
           };
         }
 
-        // Limita il numero di matches per evitare di saturare il contesto
-        const maxMatches = 10;
-        const limitedMatches = matches.slice(0, maxMatches);
-        const hasMore = matches.length > maxMatches;
-
+        // Restituisci TUTTI i risultati trovati
         return {
           success: true,
           searchQuery,
           documentName,
           matchesFound: matches.length,
-          matchesReturned: limitedMatches.length,
-          hasMore,
-          matches: limitedMatches.map(m => ({
+          matchesReturned: matches.length,
+          hasMore: false,
+          matches: matches.map(m => ({
             lineNumber: m.lineNumber,
             matchedLine: m.line,
             context: m.context.join('\n')
-          })),
-          note: hasMore ? `Mostrati i primi ${maxMatches} risultati su ${matches.length} totali. Raffina la ricerca per risultati più specifici.` : undefined
+          }))
         };
 
       } catch (error) {

@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
     // Usa il client admin per aggiornare la password
     const adminClient = createAdminClient();
     
-    const { data, error: updateError } = await adminClient.auth.admin.updateUserById(
+    const { error: updateError } = await adminClient.auth.admin.updateUserById(
       userId,
       { password: newPassword }
     );

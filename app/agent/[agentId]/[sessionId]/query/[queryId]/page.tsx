@@ -98,14 +98,17 @@ export default function QueryPage() {
   const [pageSize, setPageSize] = useState(100); // Numero di record per pagina
   const [isLoadingFreshData, setIsLoadingFreshData] = useState(false); // Loading per dati freschi all'apertura
   const [freshData, setFreshData] = useState<unknown[] | null>(null); // Dati freschi caricati automaticamente
+  const [freshDataTimestamp, setFreshDataTimestamp] = useState<string | null>(null); // Timestamp del caricamento fresh data
 
   // Funzione per caricare i dati freschi dal DB all'apertura
   const loadFreshData = async (messageDbId: string, isSaved: boolean) => {
+    console.log('🔄 [QUERY-PAGE] Loading fresh data:', { messageDbId, isSaved, agentId });
     setIsLoadingFreshData(true);
     try {
       // Usa execute (query salvate) o refresh (query da chat)
       const endpoint = isSaved ? '/api/query/execute' : '/api/query/refresh';
       
+      console.log('📡 [QUERY-PAGE] Calling endpoint:', endpoint);
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
@@ -117,14 +120,25 @@ export default function QueryPage() {
         })
       });
 
+      console.log('📥 [QUERY-PAGE] Response status:', response.status);
       const result = await response.json();
+      console.log('📊 [QUERY-PAGE] Response data:', { 
+        success: result.success, 
+        hasResults: !!(result.data?.results),
+        resultsCount: result.data?.results?.length,
+        error: result.error 
+      });
       
       if (result.success && result.data && result.data.results) {
         setFreshData(result.data.results);
+        setFreshDataTimestamp(new Date().toISOString()); // Salva timestamp del caricamento
         setCurrentPage(1); // Reset alla prima pagina
+        console.log('✅ [QUERY-PAGE] Fresh data loaded successfully');
+      } else {
+        console.warn('⚠️ [QUERY-PAGE] Failed to load fresh data:', result.error);
       }
     } catch (error) {
-      console.error('Error loading fresh data:', error);
+      console.error('💥 [QUERY-PAGE] Error loading fresh data:', error);
     } finally {
       setIsLoadingFreshData(false);
     }
@@ -182,11 +196,20 @@ export default function QueryPage() {
   useEffect(() => {
     const loadQueryData = async () => {
       try {
+        console.log('🔍 [QUERY-PAGE] Loading query data for queryId:', queryId);
         setIsLoading(true);
         const response = await fetch(`/api/chat/query/${queryId}`);
         const result = await response.json();
 
+        console.log('📥 [QUERY-PAGE] Query data loaded:', { 
+          success: result.success, 
+          hasData: !!result.data,
+          messageId: result.data?.message?.id,
+          dbId: result.data?.message?.dbId
+        });
+
         if (!result.success) {
+          console.error('❌ [QUERY-PAGE] Failed to load query data:', result.error);
           setError(result.error || 'Failed to load query data');
           return;
         }
@@ -194,13 +217,21 @@ export default function QueryPage() {
         setQueryData(result.data);
         
         const messageDbId = result.data.message.dbId || result.data.message.id;
+        console.log('🔑 [QUERY-PAGE] Using messageDbId:', messageDbId);
         
         // Controlla se la query è già salvata
+        console.log('🔍 [QUERY-PAGE] Checking if query is saved...');
         const checkResponse = await fetch(`/api/query/save?chatMessageId=${messageDbId}`);
         const checkResult = await checkResponse.json();
         
+        console.log('💾 [QUERY-PAGE] Saved query check result:', { 
+          success: checkResult.success, 
+          dataLength: checkResult.data?.length 
+        });
+        
         const isSaved = checkResult.success && checkResult.data && checkResult.data.length > 0;
         setIsQuerySaved(isSaved);
+        console.log('📌 [QUERY-PAGE] Query is saved:', isSaved);
         
         // Se salvata, carica anche chart config e titolo
         if (isSaved) {
@@ -223,10 +254,13 @@ export default function QueryPage() {
         }
         
         // Carica SEMPRE i dati freschi dal DB (sia salvata che non)
+        console.log('🚀 [QUERY-PAGE] Starting fresh data load...');
         await loadFreshData(messageDbId, isSaved);
       } catch (err) {
+        console.error('💥 [QUERY-PAGE] Error in loadQueryData:', err);
         setError(err instanceof Error ? err.message : 'Unknown error');
       } finally {
+        console.log('✅ [QUERY-PAGE] Query data loading complete');
         setIsLoading(false);
       }
     };
@@ -341,6 +375,7 @@ export default function QueryPage() {
       if (result.success) {
         setRefreshedData(result.data);
         setFreshData(null); // Pulisci i dati freschi quando fai refresh manuale
+        setFreshDataTimestamp(null); // Pulisci anche il timestamp
         setCurrentPage(1); // Reset alla prima pagina
         setNotification({
           type: 'success',
@@ -947,8 +982,8 @@ export default function QueryPage() {
                                 minute: '2-digit',
                                 second: '2-digit'
                               })
-                            : queryData.message?.createdAt 
-                              ? new Date(String(queryData.message.createdAt)).toLocaleString('it-IT', {
+                            : freshDataTimestamp 
+                              ? new Date(freshDataTimestamp).toLocaleString('it-IT', {
                                   year: 'numeric',
                                   month: '2-digit',
                                   day: '2-digit',
