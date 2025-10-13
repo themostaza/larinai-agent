@@ -84,8 +84,8 @@ export const AVAILABLE_MODELS: ModelConfig[] = [
   },
 ];
 
-// Modello di default (quello che stavi usando)
-export const DEFAULT_MODEL = 'openai:gpt-5-mini';
+// Modello di default (Claude Sonnet 4.5 - ultima generazione Anthropic)
+export const DEFAULT_MODEL = 'anthropic:claude-sonnet-4-5';
 
 // ===== Helper Functions =====
 
