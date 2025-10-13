@@ -9,9 +9,9 @@ const supabase = createClient<Database>(
 
 export async function POST(request: NextRequest) {
   try {
-    const { chatMessageId, agentId } = await request.json();
+    const { chatMessageId, agentId, partIndex } = await request.json();
 
-    console.log('🔄 [REFRESH] Request received:', { chatMessageId, agentId });
+    console.log('🔄 [REFRESH] Request received:', { chatMessageId, agentId, partIndex });
 
     if (!chatMessageId) {
       return NextResponse.json(
@@ -82,12 +82,20 @@ export async function POST(request: NextRequest) {
         console.log('🔍 [REFRESH] Parts found:', parts.length);
         console.log('📋 [REFRESH] Part types:', parts.map(p => p.type));
         
-        // Cerca SPECIFICAMENTE il tool SQL, non il primo tool generico
-        const toolPart = parts.find(p => p.type === 'tool-read_sql_db');
+        // Se partIndex è fornito, usa quello specifico, altrimenti cerca il primo tool SQL
+        let toolPart;
+        if (typeof partIndex === 'number' && partIndex >= 0 && partIndex < parts.length) {
+          console.log('🎯 [REFRESH] Using specific partIndex:', partIndex);
+          toolPart = parts[partIndex];
+        } else {
+          console.log('🔍 [REFRESH] Searching for first SQL tool');
+          toolPart = parts.find(p => p.type === 'tool-read_sql_db');
+        }
         
         console.log('🔧 [REFRESH] SQL Tool part found:', { 
           found: !!toolPart, 
           type: toolPart?.type,
+          partIndex: typeof partIndex === 'number' ? partIndex : 'auto',
           hasQuery: !!(toolPart?.input?.query || toolPart?.output?.query),
           hasDatabase: !!(toolPart?.input?.database || toolPart?.output?.database)
         });

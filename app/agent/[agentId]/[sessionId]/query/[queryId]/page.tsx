@@ -101,8 +101,8 @@ export default function QueryPage() {
   const [freshDataTimestamp, setFreshDataTimestamp] = useState<string | null>(null); // Timestamp del caricamento fresh data
 
   // Funzione per caricare i dati freschi dal DB all'apertura
-  const loadFreshData = async (messageId: string, isSaved: boolean) => {
-    console.log('🔄 [QUERY-PAGE] Loading fresh data:', { messageId, isSaved, agentId });
+  const loadFreshData = async (messageId: string, isSaved: boolean, partIndex?: number) => {
+    console.log('🔄 [QUERY-PAGE] Loading fresh data:', { messageId, isSaved, partIndex, agentId });
     setIsLoadingFreshData(true);
     try {
       // Usa execute (query salvate) o refresh (query da chat)
@@ -116,7 +116,8 @@ export default function QueryPage() {
         },
         body: JSON.stringify({
           chatMessageId: messageId,
-          agentId: agentId
+          agentId: agentId,
+          partIndex: partIndex // Passa il partIndex per identificare la query specifica
         })
       });
 
@@ -257,7 +258,7 @@ export default function QueryPage() {
         
         // Carica SEMPRE i dati freschi dal DB (sia salvata che non)
         console.log('🚀 [QUERY-PAGE] Starting fresh data load...');
-        await loadFreshData(messageId, isSaved);
+        await loadFreshData(messageId, isSaved, result.data.partIndex);
       } catch (err) {
         console.error('💥 [QUERY-PAGE] Error in loadQueryData:', err);
         setError(err instanceof Error ? err.message : 'Unknown error');
@@ -368,7 +369,8 @@ export default function QueryPage() {
         },
         body: JSON.stringify({
           chatMessageId: queryData.message.id, // Usa l'ID del messaggio AI per refresh
-          agentId: agentId
+          agentId: agentId,
+          partIndex: queryData.partIndex // Passa il partIndex per identificare la query specifica
         })
       });
 
