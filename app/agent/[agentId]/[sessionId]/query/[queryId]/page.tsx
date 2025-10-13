@@ -101,8 +101,8 @@ export default function QueryPage() {
   const [freshDataTimestamp, setFreshDataTimestamp] = useState<string | null>(null); // Timestamp del caricamento fresh data
 
   // Funzione per caricare i dati freschi dal DB all'apertura
-  const loadFreshData = async (messageDbId: string, isSaved: boolean) => {
-    console.log('🔄 [QUERY-PAGE] Loading fresh data:', { messageDbId, isSaved, agentId });
+  const loadFreshData = async (messageId: string, isSaved: boolean) => {
+    console.log('🔄 [QUERY-PAGE] Loading fresh data:', { messageId, isSaved, agentId });
     setIsLoadingFreshData(true);
     try {
       // Usa execute (query salvate) o refresh (query da chat)
@@ -115,7 +115,7 @@ export default function QueryPage() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          chatMessageId: messageDbId,
+          chatMessageId: messageId,
           agentId: agentId
         })
       });
@@ -147,7 +147,7 @@ export default function QueryPage() {
   // Funzione per ricaricare la configurazione chart_kpi
   const reloadChartConfig = async () => {
     try {
-      const messageDbId = queryData?.message?.dbId || queryData?.message?.id;
+      const messageDbId = queryData?.message?.dbId;
       if (!messageDbId) {
         console.warn('⚠️ [QUERY-PAGE] Cannot reload: messageDbId missing');
         return;
@@ -216,8 +216,10 @@ export default function QueryPage() {
 
         setQueryData(result.data);
         
-        const messageDbId = result.data.message.dbId || result.data.message.id;
-        console.log('🔑 [QUERY-PAGE] Using messageDbId:', messageDbId);
+        // Per le API refresh/execute, dobbiamo usare sempre l'ID del messaggio AI, non l'ID della riga del DB
+        const messageId = result.data.message.id; // ID del messaggio AI 
+        const messageDbId = result.data.message.dbId; // ID della riga nel DB (per reference)
+        console.log('🔑 [QUERY-PAGE] Using messageId for APIs:', { messageId, messageDbId });
         
         // Controlla se la query è già salvata
         console.log('🔍 [QUERY-PAGE] Checking if query is saved...');
@@ -255,7 +257,7 @@ export default function QueryPage() {
         
         // Carica SEMPRE i dati freschi dal DB (sia salvata che non)
         console.log('🚀 [QUERY-PAGE] Starting fresh data load...');
-        await loadFreshData(messageDbId, isSaved);
+        await loadFreshData(messageId, isSaved);
       } catch (err) {
         console.error('💥 [QUERY-PAGE] Error in loadQueryData:', err);
         setError(err instanceof Error ? err.message : 'Unknown error');
@@ -349,7 +351,7 @@ export default function QueryPage() {
       return;
     }
     
-    if (!queryData?.message?.dbId) {
+    if (!queryData?.message?.id) {
       setNotification({
         type: 'error',
         message: 'Impossibile aggiornare: dati mancanti'
@@ -365,7 +367,7 @@ export default function QueryPage() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          chatMessageId: queryData.message.dbId,
+          chatMessageId: queryData.message.id, // Usa l'ID del messaggio AI per refresh
           agentId: agentId
         })
       });
@@ -515,7 +517,7 @@ export default function QueryPage() {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            chatMessageId: queryData.message.dbId || queryData.message.id,
+            chatMessageId: queryData.message.dbId, // Usa l'ID della riga del DB per save
             title: queryTitle.trim()
           })
         });
@@ -547,7 +549,7 @@ export default function QueryPage() {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            chatMessageId: queryData.message.dbId || queryData.message.id,
+            chatMessageId: queryData.message.dbId, // Usa l'ID della riga del DB per save
             query: input.query || output.query || '',
             title: queryTitle.trim(),
             body: {
@@ -604,7 +606,7 @@ export default function QueryPage() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          chatMessageId: queryData.message.dbId || queryData.message.id,
+          chatMessageId: queryData.message.dbId, // Usa l'ID della riga del DB per execute
           agentId: agentId
         })
       });

@@ -58,11 +58,11 @@ export async function POST(request: NextRequest) {
       }
     } else {
       // Query NON salvata, prendi dalla tabella chat_messages
-      console.log('⚠️ [REFRESH] Not in saved queries, searching in chat_messages for id:', chatMessageId);
+      console.log('⚠️ [REFRESH] Not in saved queries, searching in chat_messages for message_id:', chatMessageId);
       const { data: chatMessage, error: chatMessageError } = await supabase
         .from('chat_messages')
         .select('parts')
-        .eq('id', chatMessageId)
+        .eq('message_id', chatMessageId)
         .single();
 
       console.log('📨 [REFRESH] chat_messages result:', { 
