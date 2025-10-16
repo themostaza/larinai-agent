@@ -101,21 +101,24 @@ export default function QueryPage() {
   const [freshDataTimestamp, setFreshDataTimestamp] = useState<string | null>(null); // Timestamp del caricamento fresh data
 
   // Funzione per caricare i dati freschi dal DB all'apertura
-  const loadFreshData = async (messageId: string, isSaved: boolean, partIndex?: number) => {
-    console.log('🔄 [QUERY-PAGE] Loading fresh data:', { messageId, isSaved, partIndex, agentId });
+  const loadFreshData = async (messageId: string, messageDbId: string | undefined, isSaved: boolean, partIndex?: number) => {
+    console.log('🔄 [QUERY-PAGE] Loading fresh data:', { messageId, messageDbId, isSaved, partIndex, agentId });
     setIsLoadingFreshData(true);
     try {
       // Usa execute (query salvate) o refresh (query da chat)
       const endpoint = isSaved ? '/api/query/execute' : '/api/query/refresh';
       
-      console.log('📡 [QUERY-PAGE] Calling endpoint:', endpoint);
+      // Per execute usa messageDbId (ID riga DB), per refresh usa messageId (ID messaggio AI)
+      const chatMessageIdToUse = isSaved ? messageDbId : messageId;
+      
+      console.log('📡 [QUERY-PAGE] Calling endpoint:', endpoint, 'with chatMessageId:', chatMessageIdToUse);
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          chatMessageId: messageId,
+          chatMessageId: chatMessageIdToUse,
           agentId: agentId,
           partIndex: partIndex // Passa il partIndex per identificare la query specifica
         })
@@ -258,7 +261,7 @@ export default function QueryPage() {
         
         // Carica SEMPRE i dati freschi dal DB (sia salvata che non)
         console.log('🚀 [QUERY-PAGE] Starting fresh data load...');
-        await loadFreshData(messageId, isSaved, result.data.partIndex);
+        await loadFreshData(messageId, messageDbId, isSaved, result.data.partIndex);
       } catch (err) {
         console.error('💥 [QUERY-PAGE] Error in loadQueryData:', err);
         setError(err instanceof Error ? err.message : 'Unknown error');

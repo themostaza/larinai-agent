@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Brain, ChevronRight } from 'lucide-react';
+import { Brain } from 'lucide-react';
 
 interface MessagePart {
   type: string;
@@ -18,41 +18,31 @@ interface MessagePart {
 
 interface ReasoningIndicatorProps {
   part: MessagePart;
-  onClick?: () => void;
   isStreaming?: boolean;
 }
 
-export default function ReasoningIndicator({ part, onClick, isStreaming = false }: ReasoningIndicatorProps) {
+export default function ReasoningIndicator({ part, isStreaming = false }: ReasoningIndicatorProps) {
   const hasContent = part.text && part.text.trim().length > 0;
-  const itemId = part.providerMetadata?.openai?.itemId;
   
   // Durante lo streaming mostra "Sto pensando..."
   if (isStreaming || part.state === 'streaming' || part.state !== 'done') {
     return (
-      <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-purple-900/20 border border-purple-500/30 rounded-lg text-purple-300 text-sm my-1">
-        <Brain className="w-4 h-4 animate-pulse" />
+      <div className="inline-flex items-center gap-2 text-xs text-purple-400 my-1 px-2 py-1 bg-purple-900/20 rounded border border-purple-500/30">
+        <Brain className="w-3 h-3 animate-pulse" />
         <span>Sto pensando...</span>
       </div>
     );
   }
 
-  // Dopo il completamento, mostra un indicatore cliccabile
+  // Dopo il completamento, mostra un indicatore compatto
   return (
-    <button
-      onClick={onClick}
-      className="inline-flex items-center gap-2 px-3 py-1.5 bg-purple-900/20 border border-purple-500/30 rounded-lg text-purple-300 text-sm my-1 hover:bg-purple-900/30 hover:border-purple-500/50 transition-all cursor-pointer group"
-      title="Clicca per vedere i dettagli del ragionamento"
-    >
-      <Brain className="w-4 h-4" />
-      <span className="font-medium">Reasoning step</span>
+    <div className="inline-flex items-center gap-2 text-xs text-purple-400 my-1 px-2 py-1 bg-purple-900/20 rounded border border-purple-500/30">
+      <Brain className="w-3 h-3" />
+      <span>Reasoning step</span>
       {hasContent && (
-        <span className="text-xs text-purple-400/70">• {part.text?.substring(0, 30)}...</span>
+        <span className="text-purple-300">• {part.text?.substring(0, 25)}...</span>
       )}
-      {itemId && !hasContent && (
-        <span className="text-xs text-purple-400/50">• ID: {itemId.substring(0, 12)}...</span>
-      )}
-      <ChevronRight className="w-3 h-3 opacity-50 group-hover:opacity-100 transition-opacity" />
-    </button>
+    </div>
   );
 }
 

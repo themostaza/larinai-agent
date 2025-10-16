@@ -7,7 +7,6 @@ import DatabaseQueryButton from '../../../components/DatabaseQueryButton';
 import TextSearchIndicator from '../../../components/TextSearchIndicator';
 import TextSearchSidebar from '../../../components/TextSearchSidebar';
 import ReasoningIndicator from '../../../components/ReasoningIndicator';
-import ReasoningSidebar from '../../../components/ReasoningSidebar';
 import ChatSidebar from '../../../components/ChatSidebar';
 import MarkdownMessage from '../../../components/MarkdownMessage';
 import { AVAILABLE_MODELS, DEFAULT_MODEL } from '@/lib/ai/models';
@@ -68,21 +67,6 @@ export default function ChatSessionPage() {
     note?: string;
     success: boolean;
     error?: string;
-  } | null>(null);
-  
-  // Reasoning Sidebar states
-  const [isReasoningSidebarOpen, setIsReasoningSidebarOpen] = useState(false);
-  const [reasoningSidebarWidth, setReasoningSidebarWidth] = useState(30);
-  const [currentReasoningData, setCurrentReasoningData] = useState<{
-    text?: string;
-    state?: string;
-    timestamp?: string;
-    providerMetadata?: {
-      openai?: {
-        itemId?: string;
-        reasoningEncryptedContent?: string | null;
-      };
-    };
   } | null>(null);
   
   //console.log('🟢 [CLIENT] agentId:', agentId, 'sessionId:', sessionId);
@@ -423,21 +407,6 @@ export default function ChatSessionPage() {
     setIsTextSearchSidebarOpen(true);
   };
 
-  const handleOpenReasoning = (part: MessagePart) => {
-    setCurrentReasoningData({
-      text: part.text,
-      state: part.state,
-      timestamp: new Date().toISOString(),
-      providerMetadata: part.providerMetadata as {
-        openai?: {
-          itemId?: string;
-          reasoningEncryptedContent?: string | null;
-        };
-      }
-    });
-    setIsReasoningSidebarOpen(true);
-  };
-
   const handleFeedback = async (messageId: string, feedbackType: 'up' | 'down') => {
     try {
       const response = await fetch('/api/chat/feedback', {
@@ -674,7 +643,6 @@ export default function ChatSessionPage() {
                               <ReasoningIndicator
                                 key={`${message.id}-${i}`}
                                 part={part}
-                                onClick={() => handleOpenReasoning(part as MessagePart)}
                                 isStreaming={isMessageGenerating(message.id)}
                               />
                             );
@@ -791,17 +759,6 @@ export default function ChatSessionPage() {
           searchData={currentSearchData}
           width={textSearchSidebarWidth}
           onWidthChange={setTextSearchSidebarWidth}
-        />
-      )}
-
-      {/* Reasoning Sidebar */}
-      {currentReasoningData && (
-        <ReasoningSidebar
-          isOpen={isReasoningSidebarOpen}
-          onClose={() => setIsReasoningSidebarOpen(false)}
-          reasoningData={currentReasoningData}
-          width={reasoningSidebarWidth}
-          onWidthChange={setReasoningSidebarWidth}
         />
       )}
     </>
