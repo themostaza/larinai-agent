@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { ArrowLeft, Save, Loader2, Database, FileText, X, ExternalLink } from 'lucide-react';
+import ACLConfiguration from '@/app/components/ACLConfiguration';
 
 interface Agent {
   id: string;
@@ -23,6 +24,20 @@ interface ToolConfig {
   config?: SQLToolConfig | TextSearchToolConfig | Record<string, unknown>;
 }
 
+interface TableACL {
+  enabled: boolean;
+  operations: ('SELECT' | 'INSERT' | 'UPDATE' | 'DELETE')[];
+  columns: string[]; // ['*'] for all, or specific columns
+  rowFilter?: string; // Optional WHERE condition
+}
+
+interface ACLConfig {
+  mode: 'whitelist' | 'blacklist';
+  tables: {
+    [tableName: string]: TableACL;
+  };
+}
+
 interface SQLToolConfig {
   baseUrl?: string;
   description: string;
@@ -38,6 +53,7 @@ interface SQLToolConfig {
     enableArithAbort: boolean;
     requestTimeout: number;
   };
+  acl?: ACLConfig;
 }
 
 interface TextSearchToolConfig {
@@ -85,8 +101,8 @@ interface AvailableTool {
 const AVAILABLE_TOOLS: AvailableTool[] = [
   {
     id: 'sql-tool',
-    name: 'SQL Query',
-    description: 'Esegui query SQL sui database aziendali',
+    name: 'DB Query',
+    description: 'Esegui query sui database aziendali',
     icon: Database,
   },
   {
@@ -253,7 +269,7 @@ export default function AgentEditPage() {
   const getDefaultConfig = (toolId: string): SQLToolConfig | TextSearchToolConfig | Record<string, unknown> => {
     if (toolId === 'sql-tool') {
       return {
-        description: 'Esegui query SQL sui database aziendali per ottenere dati per l\'utente e aiutare nella comprensione.',
+        description: 'Esegui query sui database aziendali per ottenere dati per l\'utente e aiutare nella comprensione.',
         database: {
           type: 'mssql',
           server: '',
@@ -266,6 +282,10 @@ export default function AgentEditPage() {
           enableArithAbort: true,
           requestTimeout: 30000,
         },
+        acl: {
+          mode: 'whitelist',
+          tables: {}
+        }
       };
     }
     if (toolId === 'text-search') {
@@ -555,6 +575,7 @@ function SQLToolConfigSheet({ config, onSave, onClose }: SQLToolConfigSheetProps
   const [showSchemaDialog, setShowSchemaDialog] = useState(false);
   const [dbSchema, setDbSchema] = useState<DbSchema | null>(null);
   const [isCopied, setIsCopied] = useState(false);
+  const [activeTab, setActiveTab] = useState<'database' | 'acl'>('database');
 
   // Check if there are unsaved changes
   const hasChanges = () => {
@@ -607,7 +628,7 @@ function SQLToolConfigSheet({ config, onSave, onClose }: SQLToolConfigSheetProps
       <div className="w-full lg:w-5/6 bg-gray-900 border-l border-gray-800 overflow-y-auto">
         <div className="sticky top-0 bg-gray-900 border-b border-gray-800 p-6 flex items-center justify-between z-10">
           <div>
-            <h2 className="text-xl font-bold text-white">Configura SQL Tool</h2>
+            <h2 className="text-xl font-bold text-white">Configura DB Query Tool</h2>
           </div>
           <div className="flex items-center gap-3">
             <button
@@ -657,7 +678,7 @@ function SQLToolConfigSheet({ config, onSave, onClose }: SQLToolConfigSheetProps
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                   required
                   className="flex-1 w-full px-4 py-3 bg-gray-900 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-white text-sm resize-none min-h-[600px]"
-                  placeholder="Descrizione dettagliata di cosa fa il tool per l'AI...&#10;&#10;Esempio:&#10;Esegui query SQL sui database aziendali per ottenere dati per l'utente e aiutare nella comprensione. Puoi esplorare lo schema del database per ottenere informazioni sui dati disponibili e sulla struttura delle tabelle."
+                  placeholder="Descrizione dettagliata di cosa fa il tool per l'AI...&#10;&#10;Esempio:&#10;Esegui query sui database aziendali per ottenere dati per l'utente e aiutare nella comprensione. Puoi esplorare lo schema del database per ottenere informazioni sui dati disponibili e sulla struttura delle tabelle."
                 />
                 <p className="text-xs text-gray-500 mt-2">
                   Questa descrizione viene fornita all&apos;AI per capire quando e come usare questo tool
@@ -665,8 +686,37 @@ function SQLToolConfigSheet({ config, onSave, onClose }: SQLToolConfigSheetProps
               </div>
             </div>
 
-            {/* Right Column - Configuration */}
+            {/* Right Column - Tabbed Configuration */}
             <div className="space-y-6">
+              {/* Tabs Header */}
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('database')}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                    activeTab === 'database'
+                      ? 'bg-gray-700 text-white border border-gray-600'
+                      : 'bg-gray-800 text-gray-400 hover:text-gray-300 border border-gray-700'
+                  }`}
+                >
+                  Database
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('acl')}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                    activeTab === 'acl'
+                      ? 'bg-gray-700 text-white border border-gray-600'
+                      : 'bg-gray-800 text-gray-400 hover:text-gray-300 border border-gray-700'
+                  }`}
+                >
+                  ACL
+                </button>
+              </div>
+
+              {/* Tab Content */}
+              {activeTab === 'database' && (
+              <>
               {/* Base URL (Optional) */}
               <div className="bg-gray-800 rounded-lg border border-gray-700 p-4">
                 <label className="block text-sm font-medium text-gray-300 mb-2">
@@ -879,6 +929,18 @@ function SQLToolConfigSheet({ config, onSave, onClose }: SQLToolConfigSheetProps
                   Testa la connessione ed estrai lo schema completo del database
                 </p>
               </div>
+              </>
+              )}
+
+              {/* ACL Tab */}
+              {activeTab === 'acl' && (
+                <ACLConfiguration
+                  config={formData}
+                  onConfigChange={setFormData}
+                  onTestConnection={handleTestConnection}
+                  isTestingConnection={isTestingConnection}
+                />
+              )}
             </div>
           </div>
         </form>

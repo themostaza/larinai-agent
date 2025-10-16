@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { LogOut, UserPlus, Loader2, Bot, Settings, X, AlertCircle, BarChart3 } from 'lucide-react';
+import { LogOut, UserPlus, Loader2, Bot, Settings, X, AlertCircle, BarChart3, Copy } from 'lucide-react';
+import DuplicateAgentDialog from '@/app/components/DuplicateAgentDialog';
 
 interface Organization {
   id: string;
@@ -32,6 +33,10 @@ export default function BackOfficePage() {
   const [newAgentName, setNewAgentName] = useState('');
   const [isCreatingAgent, setIsCreatingAgent] = useState(false);
   const [createAgentError, setCreateAgentError] = useState('');
+
+  // Duplicate Agent Dialog State
+  const [showDuplicateDialog, setShowDuplicateDialog] = useState(false);
+  const [agentToDuplicate, setAgentToDuplicate] = useState<{ id: string; name: string } | null>(null);
 
   // Carica le organizzazioni al mount
   useEffect(() => {
@@ -122,6 +127,18 @@ export default function BackOfficePage() {
     setShowCreateAgentModal(true);
     setNewAgentName('');
     setCreateAgentError('');
+  };
+
+  const handleDuplicateAgent = (agent: Agent) => {
+    setAgentToDuplicate({ id: agent.id, name: agent.name || 'Agent senza nome' });
+    setShowDuplicateDialog(true);
+  };
+
+  const handleDuplicateSuccess = () => {
+    // Ricarica la lista degli agent dopo la duplicazione
+    if (selectedOrgId) {
+      fetchAgents(selectedOrgId);
+    }
   };
 
   const handleConfirmCreateAgent = async () => {
@@ -296,6 +313,13 @@ export default function BackOfficePage() {
                             <BarChart3 size={18} />
                           </button>
                           <button
+                            onClick={() => handleDuplicateAgent(agent)}
+                            className="p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors"
+                            title="Duplica agent"
+                          >
+                            <Copy size={18} />
+                          </button>
+                          <button
                             onClick={() => router.push(`/agent/${agent.id}/edit`)}
                             className="p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors"
                             title="Modifica agent"
@@ -327,6 +351,19 @@ export default function BackOfficePage() {
           </div>
         )}
       </main>
+
+      {/* Duplicate Agent Dialog */}
+      {showDuplicateDialog && agentToDuplicate && (
+        <DuplicateAgentDialog
+          agentId={agentToDuplicate.id}
+          agentName={agentToDuplicate.name}
+          onClose={() => {
+            setShowDuplicateDialog(false);
+            setAgentToDuplicate(null);
+          }}
+          onSuccess={handleDuplicateSuccess}
+        />
+      )}
 
       {/* Create Agent Modal */}
       {showCreateAgentModal && (

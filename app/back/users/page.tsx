@@ -43,6 +43,8 @@ export default function ManageUsersPage() {
   useEffect(() => {
     if (selectedOrgId) {
       fetchUsers(selectedOrgId);
+      // Salva la selezione in localStorage
+      localStorage.setItem('selectedOrganizationId', selectedOrgId);
     }
   }, [selectedOrgId]);
 
@@ -71,7 +73,23 @@ export default function ManageUsersPage() {
       }
 
       setOrganizations(adminOrgs);
-      setSelectedOrgId(adminOrgs[0].id);
+      
+      // Ripristina l'organizzazione selezionata da localStorage
+      const savedOrgId = localStorage.getItem('selectedOrganizationId');
+      
+      if (adminOrgs.length > 0) {
+        // Verifica se l'organizzazione salvata è ancora valida
+        const isValidOrg = savedOrgId && adminOrgs.some((org: Organization) => org.id === savedOrgId);
+        
+        if (isValidOrg) {
+          // Ripristina l'organizzazione salvata
+          setSelectedOrgId(savedOrgId);
+        } else {
+          // Altrimenti seleziona la prima organizzazione
+          setSelectedOrgId(adminOrgs[0].id);
+        }
+      }
+      
       setUserRole('admin');
     } catch (err) {
       console.error('Error fetching organizations:', err);

@@ -283,7 +283,7 @@ Come posso supportarti?`
               <Info className="w-4 h-4 text-gray-400 cursor-help" />
               <div className="absolute right-0 top-6 bg-gray-800 text-white text-xs rounded-lg p-3 shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-50 w-64 border border-gray-700">
                 {includeContext 
-                  ? "Con il contesto attivo, l'AI riceverà la query SQL e il suo scopo dalla chat principale per analisi più precise."
+                  ? "Con il contesto attivo, l'AI riceverà la query del database e il suo scopo dalla chat principale per analisi più precise."
                   : "Senza contesto, l'AI conoscerà solo la struttura dei dati disponibili per l'analisi."}
               </div>
             </div>

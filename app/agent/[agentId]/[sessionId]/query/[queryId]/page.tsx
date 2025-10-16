@@ -785,7 +785,7 @@ export default function QueryPage() {
         { Property: 'Query ID', Value: queryData?.queryId || 'N/A' },
         { Property: 'Session ID', Value: sessionId || 'N/A' },
         { Property: '', Value: '' },
-        { Property: 'SQL Query', Value: '' },
+        { Property: 'DB Query', Value: '' },
         { Property: metadata.query || '', Value: '' }
       ];
       

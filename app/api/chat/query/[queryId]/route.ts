@@ -124,7 +124,7 @@ export async function GET(
         expected_type: 'tool-read_sql_db'
       });
       return NextResponse.json(
-        { success: false, error: `Selected part is not a SQL query (found: ${queryPart?.type || 'undefined'})` },
+        { success: false, error: `Selected part is not a DB query (found: ${queryPart?.type || 'undefined'})` },
         { status: 404 }
       );
     }
