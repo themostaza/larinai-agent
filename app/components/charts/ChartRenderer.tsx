@@ -5,6 +5,8 @@ import {
   Chart as ChartJS,
   CategoryScale,
   LinearScale,
+  TimeScale,
+  TimeSeriesScale,
   PointElement,
   LineElement,
   BarElement,
@@ -16,9 +18,13 @@ import {
 import { Line, Bar, Pie, Doughnut } from 'react-chartjs-2';
 
 // Register Chart.js components
+// Note: TimeScale requires an adapter like chartjs-adapter-date-fns to work
+// If not installed, time-based charts will fail gracefully with ErrorBoundary
 ChartJS.register(
   CategoryScale,
   LinearScale,
+  TimeScale,
+  TimeSeriesScale,
   PointElement,
   LineElement,
   BarElement,
@@ -48,14 +54,21 @@ interface ChartRendererProps {
 
 export default function ChartRenderer({ config, data }: ChartRendererProps) {
   const processData = () => {
-    if (!data || data.length === 0) {
-      return {
-        labels: [],
-        datasets: []
-      };
-    }
+    try {
+      if (!data || data.length === 0) {
+        return {
+          labels: [],
+          datasets: []
+        };
+      }
 
-    const { x_field, y_field, group_by, aggregate } = config.data;
+      const { x_field, y_field, group_by, aggregate } = config.data;
+      
+      // Validazione campi
+      if (!x_field || !y_field) {
+        console.error('❌ [CHART] Missing required fields:', { x_field, y_field });
+        return { labels: [], datasets: [] };
+      }
 
     if (group_by) {
       // Group data by the specified field
@@ -157,6 +170,10 @@ export default function ChartRenderer({ config, data }: ChartRendererProps) {
         };
       }
     }
+    } catch (error) {
+      console.error('❌ [CHART] Error processing data for', config.title, ':', error);
+      return { labels: [], datasets: [] };
+    }
   };
 
   const chartData = processData();
@@ -203,22 +220,32 @@ export default function ChartRenderer({ config, data }: ChartRendererProps) {
   };
 
   const renderChart = () => {
-    const commonProps = {
-      data: chartData,
-      options: defaultOptions
-    };
+    try {
+      const commonProps = {
+        data: chartData,
+        options: defaultOptions
+      };
 
-    switch (config.type) {
-      case 'line':
-        return <Line {...commonProps} />;
-      case 'bar':
-        return <Bar {...commonProps} />;
-      case 'pie':
-        return <Pie {...commonProps} />;
-      case 'doughnut':
-        return <Doughnut {...commonProps} />;
-      default:
-        return <div className="text-red-400">Tipo di grafico non supportato: {config.type}</div>;
+      switch (config.type) {
+        case 'line':
+          return <Line {...commonProps} />;
+        case 'bar':
+          return <Bar {...commonProps} />;
+        case 'pie':
+          return <Pie {...commonProps} />;
+        case 'doughnut':
+          return <Doughnut {...commonProps} />;
+        default:
+          return <div className="text-red-400">Tipo di grafico non supportato: {config.type}</div>;
+      }
+    } catch (error) {
+      console.error('❌ [CHART] Error rendering chart', config.title, ':', error);
+      return (
+        <div className="bg-red-900/20 border border-red-500/30 rounded-lg p-4 text-center">
+          <div className="text-red-400 text-sm">Errore nel rendering del grafico</div>
+          <div className="text-red-300 text-xs mt-1">{error instanceof Error ? error.message : 'Errore sconosciuto'}</div>
+        </div>
+      );
     }
   };
 

@@ -1,9 +1,10 @@
 'use client';
 
 import React from 'react';
-import { BrainCircuit } from 'lucide-react';
+import { BrainCircuit, AlertCircle } from 'lucide-react';
 import KPICard from './KPICard';
 import ChartRenderer from './ChartRenderer';
+import ChartErrorBoundary from './ChartErrorBoundary';
 
 interface KPIConfig {
   id: string;
@@ -111,33 +112,47 @@ export default function DynamicChartsContainer({ config, data, onOpenAgentChat }
   }
 
   return (
-    <div className="flex-1 p-6 space-y-6 overflow-y-auto">
-
-      {/* KPIs Section */}
-      {hasKPIs && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {config.kpis!.map((kpiConfig) => (
-            <KPICard
-              key={kpiConfig.id}
-              config={kpiConfig}
-              data={data}
-            />
-          ))}
+    <ChartErrorBoundary
+      fallback={
+        <div className="flex-1 flex items-center justify-center">
+          <div className="bg-gray-900 rounded-lg border border-red-900/50 p-8 text-center">
+            <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
+            <h3 className="text-lg font-semibold text-red-400 mb-2">Errore nella renderizzazione</h3>
+            <p className="text-gray-400 text-sm">Si è verificato un errore nel caricamento dei grafici e KPI.</p>
+          </div>
         </div>
-      )}
+      }
+    >
+      <div className="flex-1 p-6 space-y-6 overflow-y-auto">
 
-      {/* Charts Section */}
-      {hasCharts && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {config.charts!.map((chartConfig) => (
-            <ChartRenderer
-              key={chartConfig.id}
-              config={chartConfig}
-              data={data}
-            />
-          ))}
-        </div>
-      )}
-    </div>
+        {/* KPIs Section */}
+        {hasKPIs && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {config.kpis!.map((kpiConfig) => (
+              <ChartErrorBoundary key={kpiConfig.id} chartTitle={kpiConfig.title}>
+                <KPICard
+                  config={kpiConfig}
+                  data={data}
+                />
+              </ChartErrorBoundary>
+            ))}
+          </div>
+        )}
+
+        {/* Charts Section */}
+        {hasCharts && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {config.charts!.map((chartConfig) => (
+              <ChartErrorBoundary key={chartConfig.id} chartTitle={chartConfig.title}>
+                <ChartRenderer
+                  config={chartConfig}
+                  data={data}
+                />
+              </ChartErrorBoundary>
+            ))}
+          </div>
+        )}
+      </div>
+    </ChartErrorBoundary>
   );
 }

@@ -21,57 +21,73 @@ interface KPICardProps {
 
 export default function KPICard({ config, data }: KPICardProps) {
   const calculateValue = (): number => {
-    if (!data || data.length === 0) return 0;
+    try {
+      if (!data || data.length === 0) return 0;
 
-    // Apply filter if specified
-    let filteredData = data;
-    if (config.filter && config.aggregation === 'count_where') {
-      filteredData = data.filter(row => {
-        return Object.entries(config.filter!).every(([key, value]) => {
-          return row[key] === value;
+      // Validazione campo
+      if (!config.query_field) {
+        console.error('❌ [KPI] Missing query_field in config:', config);
+        return 0;
+      }
+
+      // Apply filter if specified
+      let filteredData = data;
+      if (config.filter && config.aggregation === 'count_where') {
+        filteredData = data.filter(row => {
+          return Object.entries(config.filter!).every(([key, value]) => {
+            return row[key] === value;
+          });
         });
-      });
-    }
+      }
 
-    const values = filteredData
-      .map(row => {
-        const value = row[config.query_field];
-        return typeof value === 'number' ? value : parseFloat(String(value)) || 0;
-      })
-      .filter(val => !isNaN(val));
+      const values = filteredData
+        .map(row => {
+          const value = row[config.query_field];
+          return typeof value === 'number' ? value : parseFloat(String(value)) || 0;
+        })
+        .filter(val => !isNaN(val));
 
-    if (values.length === 0) return 0;
+      if (values.length === 0) return 0;
 
-    switch (config.aggregation || 'sum') {
-      case 'sum':
-        return values.reduce((acc, val) => acc + val, 0);
-      case 'avg':
-        return values.reduce((acc, val) => acc + val, 0) / values.length;
-      case 'count':
-        return values.length;
-      case 'count_where':
-        return filteredData.length;
-      case 'min':
-        return Math.min(...values);
-      case 'max':
-        return Math.max(...values);
-      default:
-        return values.reduce((acc, val) => acc + val, 0);
+      switch (config.aggregation || 'sum') {
+        case 'sum':
+          return values.reduce((acc, val) => acc + val, 0);
+        case 'avg':
+          return values.reduce((acc, val) => acc + val, 0) / values.length;
+        case 'count':
+          return values.length;
+        case 'count_where':
+          return filteredData.length;
+        case 'min':
+          return Math.min(...values);
+        case 'max':
+          return Math.max(...values);
+        default:
+          return values.reduce((acc, val) => acc + val, 0);
+      }
+    } catch (error) {
+      console.error('❌ [KPI] Error calculating value for', config.title, ':', error);
+      return 0;
     }
   };
 
   const formatValue = (value: number): string => {
-    switch (config.type) {
-      case 'currency':
-        return new Intl.NumberFormat('it-IT', {
-          style: 'currency',
-          currency: 'EUR'
-        }).format(value);
-      case 'percentage':
-        return `${value.toFixed(1)}%`;
-      case 'number':
-      default:
-        return new Intl.NumberFormat('it-IT').format(value);
+    try {
+      switch (config.type) {
+        case 'currency':
+          return new Intl.NumberFormat('it-IT', {
+            style: 'currency',
+            currency: 'EUR'
+          }).format(value);
+        case 'percentage':
+          return `${value.toFixed(1)}%`;
+        case 'number':
+        default:
+          return new Intl.NumberFormat('it-IT').format(value);
+      }
+    } catch (error) {
+      console.error('❌ [KPI] Error formatting value:', error);
+      return String(value);
     }
   };
 

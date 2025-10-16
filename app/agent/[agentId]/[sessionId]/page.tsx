@@ -84,6 +84,14 @@ export default function ChatSessionPage() {
     localStorage.setItem('selectedAIModel', selectedModel);
   }, [selectedModel]);
 
+  // Imposta il titolo della pagina
+  useEffect(() => {
+    document.title = 'LAI - Chat';
+    return () => {
+      document.title = 'LAI'; // Reset al titolo di default quando si esce
+    };
+  }, []);
+
   // Carica i dati dell'agent e organizzazione
   useEffect(() => {
     const fetchAgentInfo = async () => {

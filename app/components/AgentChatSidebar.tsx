@@ -1,15 +1,10 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
-import { Send, ChevronDown } from 'lucide-react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { Send, ChevronDown, Loader2, RotateCcw, Info } from 'lucide-react';
+import { useChat } from '@ai-sdk/react';
 import { AVAILABLE_MODELS, DEFAULT_MODEL, getModelsByProvider } from '@/lib/ai/models';
-
-interface Message {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  timestamp: Date;
-}
+import MarkdownMessage from './MarkdownMessage';
 
 interface AgentChatSidebarProps {
   isOpen: boolean;
@@ -28,15 +23,27 @@ interface AgentChatSidebarProps {
 }
 
 export default function AgentChatSidebar({ isOpen, onWidthChange, queryContext, onChartsUpdated }: AgentChatSidebarProps) {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [inputMessage, setInputMessage] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
   const [selectedModel, setSelectedModel] = useState<string>(DEFAULT_MODEL);
   const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false);
+  const [includeContext, setIncludeContext] = useState(true); // Toggle contesto, default ON
+  const [hasUserSentMessage, setHasUserSentMessage] = useState(false); // Traccia se l'utente ha già inviato messaggi
+  const [hasInitialized, setHasInitialized] = useState(false); // Traccia se abbiamo già inizializzato
+  const [input, setInput] = useState(''); // Stato locale per input
+  const [isLoading, setIsLoading] = useState(false); // Stato locale per loading
+  const processedToolCallsRef = useRef<Set<string>>(new Set()); // Traccia tool calls già processati
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const modelDropdownRef = useRef<HTMLDivElement>(null);
+  
+  // useChat hook - usa /api/chat standard con flag isChartAgent
+  const { messages, setMessages, sendMessage: baseSendMessage } = useChat({
+    onFinish: () => {
+      console.log('✅ [CHART-AGENT] Message finished');
+      setIsLoading(false);
+      // onChartsUpdated viene chiamato in tempo reale quando il tool viene eseguito (vedi useEffect sopra)
+    }
+  });
 
   // Carica il modello selezionato da localStorage al mount
   useEffect(() => {
@@ -66,6 +73,34 @@ export default function AgentChatSidebar({ isOpen, onWidthChange, queryContext, 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  // Monitor messaggi per tool execution in tempo reale
+  useEffect(() => {
+    if (!messages || messages.length === 0) return;
+    
+    // Controlla l'ultimo messaggio per tool di create_chart
+    const lastMessage = messages[messages.length - 1];
+    if (lastMessage?.role === 'assistant' && lastMessage.parts) {
+      // Cerca tool calls di create_chart non ancora processati
+      lastMessage.parts.forEach((part) => {
+        if (part.type?.startsWith('tool-') && part.type.includes('create_chart')) {
+          // Usa toolCallId come identificatore univoco
+          const toolCallId = (part as { toolCallId?: string }).toolCallId;
+          if (toolCallId && !processedToolCallsRef.current.has(toolCallId)) {
+            console.log('🔄 [CHART-AGENT] Tool create_chart detected (ID:', toolCallId, '), reloading charts immediately!');
+            processedToolCallsRef.current.add(toolCallId);
+            
+            if (onChartsUpdated) {
+              // Ricarica i grafici immediatamente quando vediamo il tool
+              setTimeout(() => {
+                onChartsUpdated();
+              }, 500); // Piccolo delay per dare tempo al DB
+            }
+          }
+        }
+      });
+    }
+  }, [messages, onChartsUpdated]);
 
   // Focus input when sidebar opens
   useEffect(() => {
@@ -112,164 +147,88 @@ export default function AgentChatSidebar({ isOpen, onWidthChange, queryContext, 
 
   // Initialize with context message when sidebar opens
   useEffect(() => {
-    if (isOpen && queryContext && messages.length === 0) {
-      const contextMessage: Message = {
-        id: 'context-' + Date.now(),
-        role: 'assistant',
-        content: `Ciao! Ti supporto con l'analisi dei dati. Ho accesso al contesto:\n\nDatabase: ${queryContext.database}\nScopo: ${queryContext.purpose}\n\nCome posso aiutarti?`,
-        timestamp: new Date()
-      };
-      setMessages([contextMessage]);
+    if (isOpen && queryContext && !hasInitialized && messages.length === 0) {
+      // Aspetta un po' prima di inizializzare per evitare race conditions
+      setTimeout(() => {
+        const contextMessage = {
+          id: 'context-' + Date.now(),
+          role: 'assistant' as const,
+          parts: [{
+            type: 'text' as const,
+            text: `👋 Sono il tuo assistente per l'analisi dati.
+
+Come posso supportarti?`
+          }]
+        };
+        setMessages([contextMessage]);
+        setHasInitialized(true);
+      }, 100);
     }
-  }, [isOpen, queryContext, messages.length]);
+  }, [isOpen, queryContext, hasInitialized, messages.length, setMessages]);
 
-  const sendMessage = async () => {
-    if (!inputMessage.trim() || isLoading) return;
+  // Wrapper per baseSendMessage che blocca il toggle dopo il primo messaggio
+  const sendMessage = useCallback((e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!input || !input.trim() || isLoading) return;
 
-    const userMessage: Message = {
-      id: 'user-' + Date.now(),
-      role: 'user',
-      content: inputMessage.trim(),
-      timestamp: new Date()
-    };
+    // Blocca il toggle contesto dopo il primo messaggio
+    if (!hasUserSentMessage) {
+      setHasUserSentMessage(true);
+    }
 
-    setMessages(prev => [...prev, userMessage]);
-    setInputMessage('');
+    console.log('📤 [CHART-AGENT] Sending message');
     setIsLoading(true);
-
-    try {
-      // Chiamata al data_agent API
-      const response = await fetch('/api/data_agent', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          messages: messages.concat(userMessage).map(msg => ({
-            id: msg.id,
-            role: msg.role,
-            content: msg.content
-          })),
-          queryContext,
-          modelId: selectedModel
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+    baseSendMessage({ text: input }, {
+      body: {
+        isChartAgent: true, // Flag per identificare richieste dal Chart Agent
+        queryContext: includeContext ? queryContext : undefined,
+        modelId: selectedModel
       }
+    });
+    setInput('');
+  }, [input, isLoading, hasUserSentMessage, baseSendMessage, includeContext, queryContext, selectedModel]);
 
-      // Handle streaming response
-      const reader = response.body?.getReader();
-      if (!reader) {
-        throw new Error('No response body');
-      }
-
-      const assistantMessage: Message = {
-        id: 'assistant-' + Date.now(),
-        role: 'assistant',
-        content: '',
-        timestamp: new Date()
-      };
-
-      setMessages(prev => [...prev, assistantMessage]);
-
-      const decoder = new TextDecoder();
-      let buffer = '';
-      let toolExecuted = false;
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          if (!line.trim() || line.trim() === '') continue;
-          
-          try {
-            // Il formato è "X:JSON" dove X è il tipo di messaggio
-            const colonIndex = line.indexOf(':');
-            if (colonIndex === -1) continue;
-            
-            const prefix = line.slice(0, colonIndex);
-            const jsonStr = line.slice(colonIndex + 1);
-            
-            if (!jsonStr.trim()) continue;
-            
-            const data = JSON.parse(jsonStr);
-            
-            // Gestisci diversi tipi di messaggi
-            if (prefix === '0' || prefix === '2') {
-              // Text delta o text done
-              if (data.type === 'text-delta' && data.textDelta) {
-                assistantMessage.content += data.textDelta;
-                setMessages(prev => prev.map(msg => 
-                  msg.id === assistantMessage.id 
-                    ? { ...msg, content: assistantMessage.content }
-                    : msg
-                ));
-              } else if (data.content) {
-                // Fallback per formato vecchio
-                assistantMessage.content += data.content;
-                setMessages(prev => prev.map(msg => 
-                  msg.id === assistantMessage.id 
-                    ? { ...msg, content: assistantMessage.content }
-                    : msg
-                ));
-              }
-            } else if (prefix === '9' || prefix === 'd') {
-              // Tool result
-              console.log('🔧 [CHAT] Tool event detected:', data);
-              if ((data.toolName === 'create_chart' || data.toolCallId) && (data.result?.success || data.type === 'tool-result')) {
-                console.log('✅ [CHAT] Tool create_chart executed successfully');
-                toolExecuted = true;
-              }
-            }
-          } catch (e) {
-            // Ignora errori di parsing
-            console.debug('Parse error:', e);
-          }
-        }
-      }
-
-      setIsLoading(false);
-      
-      // Se il tool è stato eseguito, ricarica i grafici
-      if (toolExecuted) {
-        console.log('🔄 [CHAT] Tool executed, reloading charts...');
-        if (onChartsUpdated) {
-          setTimeout(() => {
-            console.log('🔄 [CHAT] Calling onChartsUpdated callback');
-            onChartsUpdated();
-          }, 1000); // 1 secondo di delay per dare tempo al DB
-        } else {
-          console.warn('⚠️ [CHAT] onChartsUpdated callback not provided');
-        }
-      } else {
-        console.log('ℹ️ [CHAT] No tool executed, skipping chart reload');
-      }
-    } catch (error) {
-      console.error('Error sending message to agent:', error);
-      const errorMessage: Message = {
-        id: 'error-' + Date.now(),
-        role: 'assistant',
-        content: 'Scusa, si è verificato un errore. Riprova più tardi.',
-        timestamp: new Date()
-      };
-      setMessages(prev => [...prev, errorMessage]);
-      setIsLoading(false);
-    }
-  };
-
-  const handleKeyPress = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       sendMessage();
     }
   };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setInput(e.target.value);
+    // Auto-resize textarea
+    e.target.style.height = 'auto';
+    e.target.style.height = Math.min(e.target.scrollHeight, 150) + 'px';
+  };
+
+  const handleResetChat = useCallback(() => {
+    // Reset ai messaggi iniziali se c'è un contesto, altrimenti array vuoto
+    if (queryContext) {
+      const contextMessage = {
+        id: 'context-' + Date.now(),
+        role: 'assistant' as const,
+        parts: [{
+          type: 'text' as const,
+          text: `👋 Sono il tuo assistente per l'analisi dati.
+
+Come posso supportarti?`
+        }]
+      };
+      setMessages([contextMessage]);
+    } else {
+      setMessages([]);
+    }
+    
+    // Reset anche il flag per sbloccare il toggle contesto
+    setHasUserSentMessage(false);
+    // Reset toggle contesto al default (ON)
+    setIncludeContext(true);
+    // Reset flag inizializzazione
+    setHasInitialized(queryContext ? true : false);
+    // Pulisci i tool calls processati
+    processedToolCallsRef.current.clear();
+  }, [queryContext, setMessages]);
 
   if (!isOpen) return null;
 
@@ -314,32 +273,102 @@ export default function AgentChatSidebar({ isOpen, onWidthChange, queryContext, 
       />
       
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
-        {messages.map((message) => (
-          <div
-            key={message.id}
-            className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'} mb-4`}
-          >
-            <div
-              className={`max-w-[85%] px-4 py-2 rounded-2xl ${
-                message.role === 'user'
-                  ? 'bg-white text-black'
-                  : 'bg-gray-900 text-white border border-gray-700'
-              }`}
-            >
-              <div className="whitespace-pre-wrap leading-relaxed break-words">
-                <span className="text-sm font-medium opacity-60">
-                  {message.role === 'user' ? 'Tu ' : 'AI '}
-                </span>
-                <span className="text-sm">{message.content}</span>
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar relative">
+        {/* Top controls - fixed top right, aligned with messages */}
+        <div className="sticky top-0 float-right flex items-center gap-3 z-20 mb-2">
+          {/* Toggle Contesto */}
+          <div className="flex items-center gap-2">
+            {/* Info icon con tooltip */}
+            <div className="relative group">
+              <Info className="w-4 h-4 text-gray-400 cursor-help" />
+              <div className="absolute right-0 top-6 bg-gray-800 text-white text-xs rounded-lg p-3 shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-50 w-64 border border-gray-700">
+                {includeContext 
+                  ? "Con il contesto attivo, l'AI riceverà la query SQL e il suo scopo dalla chat principale per analisi più precise."
+                  : "Senza contesto, l'AI conoscerà solo la struttura dei dati disponibili per l'analisi."}
               </div>
             </div>
+            
+            <span className="text-xs text-gray-400">Contesto</span>
+            <button
+              onClick={() => !hasUserSentMessage && setIncludeContext(!includeContext)}
+              disabled={hasUserSentMessage}
+              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                includeContext ? 'bg-gray-400' : 'bg-gray-800'
+              } ${hasUserSentMessage ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:opacity-80'}`}
+              title={hasUserSentMessage ? 'Bloccato dopo il primo messaggio' : 'Attiva/Disattiva contesto query'}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full transition-transform ${
+                  includeContext ? 'bg-white translate-x-5' : 'bg-gray-500 translate-x-0.5'
+                }`}
+              />
+            </button>
           </div>
-        ))}
+          
+          {/* Reset button */}
+          <button
+            onClick={handleResetChat}
+            className="p-2 bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white border border-gray-700 rounded-lg transition-colors"
+            title="Ricomincia chat"
+          >
+            <RotateCcw size={16} />
+          </button>
+        </div>
+        
+        <div className="clear-both"></div>
+        {messages.map((message, index) => {
+          // Un messaggio sta streamando se è l'ultimo e isLoading è true
+          const isStreaming = isLoading && index === messages.length - 1 && message.role === 'assistant';
+          // Estrai il contenuto testuale dal messaggio (parts)
+          const messageContent = message.parts
+            ?.filter((part) => part.type === 'text')
+            .map((part) => part.text)
+            .join('') || '';
+          
+          return (
+            <div
+              key={message.id}
+              className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'} mb-4`}
+            >
+              <div
+                className={`max-w-[85%] px-4 py-2 rounded-lg ${
+                  message.role === 'user'
+                    ? 'bg-white text-black'
+                    : 'bg-gray-900 text-white border border-gray-700'
+                }`}
+              >
+                <div className="leading-relaxed break-words">
+                  <span className="text-sm font-medium opacity-60">
+                    {message.role === 'user' ? 'Tu ' : 'AI '}
+                  </span>
+                  {message.role === 'assistant' ? (
+                    isStreaming ? (
+                      // Durante lo streaming mostra testo plain con loader
+                      <span className="text-sm whitespace-pre-wrap">
+                        {messageContent}
+                        <span className="inline-flex items-center ml-2 align-middle">
+                          <Loader2 size={14} className="animate-spin text-gray-400" />
+                        </span>
+                      </span>
+                    ) : (
+                      // Messaggio completato: mostra markdown
+                      <div className="text-sm prose prose-invert prose-sm max-w-none">
+                        <MarkdownMessage content={messageContent} />
+                      </div>
+                    )
+                  ) : (
+                    // Messaggi utente: sempre plain text
+                    <span className="text-sm whitespace-pre-wrap">{messageContent}</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })}
         
         {isLoading && (
           <div className="flex justify-start mb-4">
-            <div className="max-w-[85%] px-4 py-2 rounded-2xl bg-gray-800 text-white border border-gray-700">
+            <div className="max-w-[85%] px-4 py-2 rounded-lg bg-gray-800 text-white border border-gray-700">
               <div className="flex items-center space-x-2">
                 <span className="text-sm font-medium opacity-60">AI </span>
                 <div className="flex space-x-1">
@@ -357,32 +386,33 @@ export default function AgentChatSidebar({ isOpen, onWidthChange, queryContext, 
 
       {/* Input */}
       <div className="p-3 border-t border-gray-700">
-        <div className="flex gap-2">
-          <input
+        <form onSubmit={sendMessage} className="flex gap-2 items-end">
+          <textarea
             ref={inputRef}
-            type="text"
-            value={inputMessage}
-            onChange={(e) => setInputMessage(e.target.value)}
-            onKeyPress={handleKeyPress}
+            value={input || ''}
+            onChange={handleInputChange}
+            onKeyDown={handleKeyDown}
             placeholder="Scrivi un messaggio..."
             disabled={isLoading}
-            className="flex-1 px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-white focus:border-transparent disabled:opacity-50"
+            rows={1}
+            className="flex-1 px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-white focus:border-transparent disabled:opacity-50 resize-none overflow-y-auto"
+            style={{ maxHeight: '150px', minHeight: '40px' }}
           />
           <button
-            onClick={sendMessage}
-            disabled={!inputMessage.trim() || isLoading}
-            className="px-3 py-2 bg-white text-black rounded-lg hover:bg-gray-100 disabled:bg-gray-600 disabled:text-gray-400 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
-            title="Invia messaggio"
+            type="submit"
+            disabled={!input || !input.trim() || isLoading}
+            className="w-10 h-10 bg-white text-black rounded-lg hover:bg-gray-100 disabled:bg-gray-600 disabled:text-gray-400 disabled:cursor-not-allowed transition-colors flex items-center justify-center flex-shrink-0"
+            title="Invia messaggio (Enter)"
           >
-            <Send className="w-3.5 h-3.5" />
+            <Send className="w-4 h-4" />
           </button>
-        </div>
+        </form>
         
         {/* Model Selector */}
-        <div className="mt-2 relative w-fit" ref={modelDropdownRef}>
+        <div className="mt-2 relative w-full" ref={modelDropdownRef}>
           <button
             onClick={() => setIsModelDropdownOpen(!isModelDropdownOpen)}
-            className="w-full flex items-center justify-between px-2 py-1 bg-gray-800 border border-gray-700 rounded text-xs text-gray-400 hover:text-gray-300 hover:border-gray-600 transition-colors"
+            className="w-fit flex items-center justify-between px-2 py-1 bg-gray-800 border border-gray-700 rounded text-xs text-gray-400 hover:text-gray-300 hover:border-gray-600 transition-colors"
           >
             <span className="truncate">
               {AVAILABLE_MODELS.find(m => m.id === selectedModel)?.name || 'Seleziona modello'}
@@ -392,7 +422,7 @@ export default function AgentChatSidebar({ isOpen, onWidthChange, queryContext, 
 
           {/* Dropdown Menu */}
           {isModelDropdownOpen && (
-            <div className="absolute bottom-full left-0 right-0 mb-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl max-h-64 overflow-y-auto z-50">
+            <div className="absolute bottom-full left-0 right-0 mb-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl max-h-64 overflow-y-auto z-50 w-full">
               {Object.entries(getModelsByProvider()).map(([provider, models]) => (
                 models.length > 0 && (
                   <div key={provider}>

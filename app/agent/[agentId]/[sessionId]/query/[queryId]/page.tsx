@@ -86,8 +86,22 @@ export default function QueryPage() {
     const tabParam = searchParams.get('tab') as 'data' | 'charts' | 'python';
     return ['data', 'charts', 'python'].includes(tabParam) ? tabParam : 'data';
   });
-  const [isAgentSidebarOpen, setIsAgentSidebarOpen] = useState(false);
-  const [sidebarWidth, setSidebarWidth] = useState(25); // Default 25% of viewport width
+  const [isAgentSidebarOpen, setIsAgentSidebarOpen] = useState(() => {
+    // Recupera lo stato salvato da localStorage
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('agentSidebarOpen');
+      return saved === 'true';
+    }
+    return false;
+  });
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    // Recupera la larghezza salvata da localStorage
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('agentSidebarWidth');
+      return saved ? parseInt(saved) : 25;
+    }
+    return 25;
+  }); // Default 25% of viewport width
   const [chartsConfig, setChartsConfig] = useState<ChartsKPIConfig | null>(null); // Chart/KPI configuration from saved query
   const [isRefreshing, setIsRefreshing] = useState(false); // Loading state for refresh
   const [refreshedData, setRefreshedData] = useState<Record<string, unknown> | null>(null); // Refreshed data from API
@@ -285,6 +299,24 @@ export default function QueryPage() {
       return () => clearTimeout(timer);
     }
   }, [notification]);
+
+  // Salva lo stato della sidebar in localStorage quando cambia
+  useEffect(() => {
+    localStorage.setItem('agentSidebarOpen', isAgentSidebarOpen.toString());
+  }, [isAgentSidebarOpen]);
+
+  // Salva la larghezza della sidebar in localStorage quando cambia
+  useEffect(() => {
+    localStorage.setItem('agentSidebarWidth', sidebarWidth.toString());
+  }, [sidebarWidth]);
+
+  // Imposta il titolo della pagina
+  useEffect(() => {
+    document.title = 'LAI - Data';
+    return () => {
+      document.title = 'LAI'; // Reset al titolo di default quando si esce
+    };
+  }, []);
 
   // Close download menu when clicking outside
   useEffect(() => {
