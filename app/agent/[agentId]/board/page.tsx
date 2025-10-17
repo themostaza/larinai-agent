@@ -75,8 +75,8 @@ export default function AgentBoardPage() {
   const [error, setError] = useState('');
   
   // Leggi la tab dall'URL, default 'stats'
-  const tabFromUrl = searchParams.get('tab') as 'stats' | 'sessions' | null;
-  const [activeTab, setActiveTab] = useState<'stats' | 'sessions'>(tabFromUrl || 'stats');
+  const tabFromUrl = searchParams.get('tab') as 'stats' | 'sessions' | 'queries' | null;
+  const [activeTab, setActiveTab] = useState<'stats' | 'sessions' | 'queries'>(tabFromUrl || 'stats');
 
   useEffect(() => {
     fetchAgentData();
@@ -84,14 +84,14 @@ export default function AgentBoardPage() {
 
   // Sincronizza la tab con l'URL
   useEffect(() => {
-    const tabFromUrl = searchParams.get('tab') as 'stats' | 'sessions' | null;
+    const tabFromUrl = searchParams.get('tab') as 'stats' | 'sessions' | 'queries' | null;
     if (tabFromUrl && tabFromUrl !== activeTab) {
       setActiveTab(tabFromUrl);
     }
   }, [searchParams]);
 
   // Funzione per cambiare tab e aggiornare URL
-  const handleTabChange = (tab: 'stats' | 'sessions') => {
+  const handleTabChange = (tab: 'stats' | 'sessions' | 'queries') => {
     setActiveTab(tab);
     const url = new URL(window.location.href);
     url.searchParams.set('tab', tab);
@@ -241,6 +241,16 @@ export default function AgentBoardPage() {
                 }`}
               >
                 Sessioni
+              </button>
+              <button
+                onClick={() => handleTabChange('queries')}
+                className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                  activeTab === 'queries'
+                    ? 'bg-gray-700 text-white border border-gray-600'
+                    : 'bg-gray-800 text-gray-400 hover:text-gray-300 border border-gray-700'
+                }`}
+              >
+                DB Query
               </button>
             </div>
           </div>
@@ -393,8 +403,10 @@ export default function AgentBoardPage() {
           </div>
         </div>
         </>
-        ) : (
+        ) : activeTab === 'sessions' ? (
           <SessionsView agentId={agentId} />
+        ) : (
+          <QueriesView agentId={agentId} />
         )}
       </main>
     </div>
@@ -751,6 +763,181 @@ function SessionChatView({ sessionId }: SessionChatViewProps) {
           </div>
         </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+// Queries View Component
+interface Query {
+  id: string;
+  title: string;
+  query: string | null;
+  createdAt: string;
+  body: Record<string, unknown> | null;
+  chartKpi: Record<string, unknown> | null;
+  chatMessageId: string | null;
+  sessionId: string | null;
+  sessionTitle: string | null;
+  userId: string | null;
+  userEmail: string;
+}
+
+interface QueriesViewProps {
+  agentId: string;
+}
+
+function QueriesView({ agentId }: QueriesViewProps) {
+  const [queries, setQueries] = useState<Query[]>([]);
+  const [selectedQueryId, setSelectedQueryId] = useState<string | null>(null);
+  const [isLoadingQueries, setIsLoadingQueries] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    fetchQueries();
+  }, [agentId]);
+
+  const fetchQueries = async () => {
+    try {
+      setIsLoadingQueries(true);
+      const response = await fetch(`/api/agents/${agentId}/queries?limit=100`);
+      const data = await response.json();
+
+      if (!data.success) {
+        setError(data.error || 'Errore nel caricamento delle query');
+        return;
+      }
+
+      setQueries(data.queries);
+      // Seleziona automaticamente la prima query se presente
+      if (data.queries.length > 0 && !selectedQueryId) {
+        setSelectedQueryId(data.queries[0].id);
+      }
+    } catch (err) {
+      console.error('Error fetching queries:', err);
+      setError('Errore di connessione');
+    } finally {
+      setIsLoadingQueries(false);
+    }
+  };
+
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('it-IT', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  if (isLoadingQueries) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="animate-spin" size={32} />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="bg-red-500/10 border border-red-500/50 rounded-lg p-4">
+        <p className="text-red-500">{error}</p>
+      </div>
+    );
+  }
+
+  if (queries.length === 0) {
+    return (
+      <div className="text-center py-12 bg-gray-900 rounded-lg border border-gray-800">
+        <MessageSquare size={48} className="mx-auto text-gray-600 mb-4" />
+        <p className="text-gray-400 text-lg">
+          Nessuna query salvata per questo agent.
+        </p>
+      </div>
+    );
+  }
+
+  const selectedQuery = queries.find(q => q.id === selectedQueryId);
+
+  return (
+    <div className="fixed inset-0 top-[57px] flex gap-4 px-4">
+      {/* Queries List - Sidebar Left */}
+      <div className="w-80 bg-gray-900 border border-gray-800 rounded-lg overflow-hidden flex flex-col flex-shrink-0 my-4">
+        <div className="p-4 border-b border-gray-800">
+          <h2 className="text-sm font-semibold text-white">
+            Query Salvate ({queries.length})
+          </h2>
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          {queries.map((query) => (
+            <button
+              key={query.id}
+              onClick={() => setSelectedQueryId(query.id)}
+              className={`w-full text-left p-4 border-b border-gray-800 hover:bg-gray-800 transition-colors ${
+                selectedQueryId === query.id ? 'bg-gray-800 border-l-4 border-l-blue-500' : ''
+              }`}
+            >
+              <p className="text-xs text-blue-400 mb-1 truncate">
+                {query.userEmail}
+              </p>
+              <h3 className="text-sm font-medium text-white mb-1 truncate">
+                {query.title}
+              </h3>
+              {query.sessionTitle && (
+                <p className="text-xs text-gray-500 mb-1 truncate">
+                  📁 {query.sessionTitle}
+                </p>
+              )}
+              <p className="text-xs text-gray-400">
+                {formatDate(query.createdAt)}
+              </p>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Query Content - Main Area */}
+      <div className="flex-1 overflow-hidden my-4">
+        {selectedQuery ? (
+          <div className="h-full overflow-y-auto p-6">
+            <div className="max-w-4xl mx-auto w-full">
+              {/* Query Info */}
+              <div className="bg-gray-900 border border-gray-800 rounded-lg p-6">
+                <h2 className="text-2xl font-bold text-white mb-6">{selectedQuery.title}</h2>
+                
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-sm text-gray-400">Utente</p>
+                    <p className="text-base font-medium text-white">{selectedQuery.userEmail}</p>
+                  </div>
+                  
+                  {selectedQuery.sessionTitle && (
+                    <div>
+                      <p className="text-sm text-gray-400">Sessione</p>
+                      <p className="text-base font-medium text-white">{selectedQuery.sessionTitle}</p>
+                    </div>
+                  )}
+                  
+                  <div>
+                    <p className="text-sm text-gray-400">Data Creazione</p>
+                    <p className="text-base font-medium text-white">{formatDate(selectedQuery.createdAt)}</p>
+                  </div>
+                  
+                  <div>
+                    <p className="text-sm text-gray-400">ID Query</p>
+                    <p className="text-xs font-mono text-gray-300">{selectedQuery.id}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center justify-center h-full">
+            <p className="text-gray-400">Seleziona una query per visualizzarne i dettagli</p>
+          </div>
+        )}
       </div>
     </div>
   );
