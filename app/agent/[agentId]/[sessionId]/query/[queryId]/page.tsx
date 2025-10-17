@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
-import { Download, Heart, Info, X, Check, AlertCircle, RefreshCw, BrainCircuit, Code, ChevronDown, ChevronUp, FileSpreadsheet } from 'lucide-react';
+import { Download, Heart, Info, X, Check, AlertCircle, RefreshCw, BrainCircuit, Code, ChevronDown, ChevronUp, FileSpreadsheet, FileJson } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import AgentChatSidebar from '@/app/components/AgentChatSidebar';
 import DynamicChartsContainer from '@/app/components/charts/DynamicChartsContainer';
@@ -81,6 +81,8 @@ export default function QueryPage() {
     message: string;
   } | null>(null);
   const [isQuerySaved, setIsQuerySaved] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false); // Dialog per conferma eliminazione
+  const [isDeletingQuery, setIsDeletingQuery] = useState(false); // Loading state per eliminazione
   // Inizializza activeTab dal parametro URL o default a 'data'
   const [activeTab, setActiveTab] = useState<'data' | 'charts' | 'python'>(() => {
     const tabParam = searchParams.get('tab') as 'data' | 'charts' | 'python';
@@ -113,6 +115,19 @@ export default function QueryPage() {
   const [isLoadingFreshData, setIsLoadingFreshData] = useState(false); // Loading per dati freschi all'apertura
   const [freshData, setFreshData] = useState<unknown[] | null>(null); // Dati freschi caricati automaticamente
   const [freshDataTimestamp, setFreshDataTimestamp] = useState<string | null>(null); // Timestamp del caricamento fresh data
+  const [isSchemaDialogOpen, setIsSchemaDialogOpen] = useState(false); // Dialog per visualizzare lo schema chart_kpi
+  const [editableSchema, setEditableSchema] = useState<string>(''); // Schema editabile come stringa JSON
+  const [originalSchema, setOriginalSchema] = useState<string>(''); // Schema originale per confronto
+  const [isSavingSchema, setIsSavingSchema] = useState(false); // Loading state per salvare schema
+  const [schemaError, setSchemaError] = useState<string | null>(null); // Errore di validazione JSON
+  const [schemaSidebarWidth, setSchemaSidebarWidth] = useState(() => {
+    // Recupera la larghezza salvata da localStorage
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('schemaSidebarWidth');
+      return saved ? parseInt(saved) : 30;
+    }
+    return 30;
+  }); // Larghezza sidebar schema (% viewport)
 
   // Funzione per caricare i dati freschi dal DB all'apertura
   const loadFreshData = async (messageId: string, messageDbId: string | undefined, isSaved: boolean, partIndex?: number) => {
@@ -208,6 +223,66 @@ export default function QueryPage() {
       }
     } catch (error) {
       console.error('❌ [QUERY-PAGE] Error reloading chart config:', error);
+    }
+  };
+
+  // Funzione per salvare lo schema modificato
+  const saveSchemaChanges = async () => {
+    if (!queryData?.message?.dbId) {
+      setNotification({
+        type: 'error',
+        message: 'Impossibile salvare: dati mancanti'
+      });
+      return;
+    }
+
+    // Valida JSON
+    try {
+      const parsedSchema = JSON.parse(editableSchema);
+      setSchemaError(null);
+
+      setIsSavingSchema(true);
+      
+      // Salva lo schema aggiornato
+      const response = await fetch('/api/query/save', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          chatMessageId: queryData.message.dbId,
+          chartKpi: parsedSchema
+        })
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        setChartsConfig(parsedSchema);
+        setOriginalSchema(editableSchema); // Aggiorna lo schema originale dopo salvataggio
+        setNotification({
+          type: 'success',
+          message: '✅ Schema salvato con successo!'
+        });
+        setIsSchemaDialogOpen(false);
+      } else {
+        setNotification({
+          type: 'error',
+          message: 'Errore nel salvataggio: ' + (result.error || 'Errore sconosciuto')
+        });
+      }
+    } catch (error) {
+      if (error instanceof SyntaxError) {
+        setSchemaError('JSON non valido: ' + error.message);
+      } else {
+        console.error('Error saving schema:', error);
+        setNotification({
+          type: 'error',
+          message: 'Errore nel salvataggio dello schema'
+        });
+      }
+    } finally {
+      setIsSavingSchema(false);
     }
   };
 
@@ -309,6 +384,11 @@ export default function QueryPage() {
   useEffect(() => {
     localStorage.setItem('agentSidebarWidth', sidebarWidth.toString());
   }, [sidebarWidth]);
+
+  // Salva la larghezza della sidebar schema in localStorage quando cambia
+  useEffect(() => {
+    localStorage.setItem('schemaSidebarWidth', schemaSidebarWidth.toString());
+  }, [schemaSidebarWidth]);
 
   // Imposta il titolo della pagina
   useEffect(() => {
@@ -538,6 +618,57 @@ export default function QueryPage() {
       setQueryTitle(savedQueryTitle);
       setIsEditMode(true);
       setIsSaveDialogOpen(true);
+    }
+  };
+
+  // Funzione per eliminare una query salvata
+  const deleteQuery = async () => {
+    if (!queryData?.message?.dbId) {
+      setNotification({
+        type: 'error',
+        message: 'Impossibile eliminare: dati mancanti'
+      });
+      return;
+    }
+
+    try {
+      setIsDeletingQuery(true);
+      
+      const response = await fetch('/api/query/save', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          chatMessageId: queryData.message.dbId
+        })
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        setIsQuerySaved(false);
+        setSavedQueryTitle(null);
+        setChartsConfig(null); // Reset anche la configurazione dei grafici
+        setIsDeleteDialogOpen(false);
+        setNotification({
+          type: 'success',
+          message: '🗑️ Query rimossa dai preferiti!'
+        });
+      } else {
+        setNotification({
+          type: 'error',
+          message: 'Errore nell\'eliminazione: ' + (result.error || 'Errore sconosciuto')
+        });
+      }
+    } catch (error) {
+      console.error('Error deleting query:', error);
+      setNotification({
+        type: 'error',
+        message: 'Errore nell\'eliminazione della query'
+      });
+    } finally {
+      setIsDeletingQuery(false);
     }
   };
 
@@ -857,7 +988,11 @@ export default function QueryPage() {
       <div 
         className="flex-1 flex flex-col overflow-hidden transition-all duration-300"
         style={{
-          marginRight: isAgentSidebarOpen ? `${sidebarWidth}vw` : '0'
+          marginRight: isAgentSidebarOpen 
+            ? `${sidebarWidth}vw` 
+            : isSchemaDialogOpen 
+              ? `${schemaSidebarWidth}vw` 
+              : '0'
         }}
       >
         {/* Header con fisarmonica */}
@@ -895,18 +1030,17 @@ export default function QueryPage() {
             </div>
             
             <button
-              onClick={isQuerySaved ? undefined : openSaveDialog}
-              disabled={isQuerySaved}
+              onClick={isQuerySaved ? () => setIsDeleteDialogOpen(true) : openSaveDialog}
               className={`group flex items-center p-2 rounded-lg border text-sm transition-all duration-300 overflow-hidden ${
                 isQuerySaved
-                  ? 'bg-gray-800/50 border-gray-500/50 text-gray-500 cursor-not-allowed'
+                  ? 'bg-gray-800 hover:bg-red-900/30 border-gray-600 hover:border-red-500 text-gray-300 hover:text-red-400'
                   : 'bg-gray-800 hover:bg-gray-700 border-gray-600 hover:border-gray-500 text-gray-300 hover:text-white'
               }`}
-              title={isQuerySaved ? "Query già salvata tra i preferiti" : "Salva query tra i preferiti"}
+              title={isQuerySaved ? "Rimuovi query dai preferiti" : "Salva query tra i preferiti"}
             >
-              <Heart className={`w-4 h-4 flex-shrink-0 ${isQuerySaved ? 'text-red-400' : ''}`} />
+              <Heart className={`w-4 h-4 flex-shrink-0 ${isQuerySaved ? 'text-red-400 fill-red-400' : ''}`} />
               <span className="whitespace-nowrap font-medium opacity-0 group-hover:opacity-100 max-w-0 group-hover:max-w-xs group-hover:ml-2 transition-all duration-300">
-                {isQuerySaved ? 'Query salvata' : 'Salva query'}
+                {isQuerySaved ? 'Rimuovi' : 'Salva query'}
               </span>
             </button>
             
@@ -916,6 +1050,10 @@ export default function QueryPage() {
                 if (isAgentSidebarOpen) {
                   setIsAgentSidebarOpen(false);
                   return;
+                }
+                // Chiudi Schema sidebar se aperta
+                if (isSchemaDialogOpen) {
+                  setIsSchemaDialogOpen(false);
                 }
                 // Se non aperta, check se deve salvare prima di aprire
                 if (promptSaveIfNeeded('agent')) {
@@ -1092,6 +1230,35 @@ export default function QueryPage() {
                         {isRefreshing ? 'Aggiornamento...' : 'Aggiorna'}
                       </span>
                     </button>
+                    
+                    {/* Schema button - solo visibile nella tab charts */}
+                    {activeTab === 'charts' && chartsConfig && (
+                      <button
+                        onClick={() => {
+                          // Chiudi Agent sidebar se aperta
+                          if (isAgentSidebarOpen) {
+                            setIsAgentSidebarOpen(false);
+                          }
+                          // Inizializza il contenuto editabile con il JSON formattato
+                          const schemaJson = JSON.stringify(chartsConfig, null, 2);
+                          setEditableSchema(schemaJson);
+                          setOriginalSchema(schemaJson); // Salva anche l'originale per confronto
+                          setSchemaError(null);
+                          setIsSchemaDialogOpen(true);
+                        }}
+                        className={`group flex items-center p-2 rounded-lg border transition-all duration-300 overflow-hidden ${
+                          isSchemaDialogOpen
+                            ? 'bg-white text-black border-gray-300 hover:bg-gray-100'
+                            : 'bg-gray-800 text-gray-300 border-gray-700 hover:bg-gray-700 hover:text-white'
+                        }`}
+                        title="Visualizza e modifica schema KPI e grafici"
+                      >
+                        <FileJson size={16} className="flex-shrink-0" />
+                        <span className="whitespace-nowrap text-sm font-medium opacity-0 group-hover:opacity-100 max-w-0 group-hover:max-w-xs group-hover:ml-2 transition-all duration-300">
+                          Schema
+                        </span>
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -1211,6 +1378,10 @@ export default function QueryPage() {
               config={chartsConfig}
               data={tableData?.rows || []} // Usa tutti i dati per i grafici, non paginati
               onOpenAgentChat={() => {
+                // Chiudi Schema sidebar se aperta
+                if (isSchemaDialogOpen) {
+                  setIsSchemaDialogOpen(false);
+                }
                 // Check se deve salvare prima di aprire l'Agent
                 if (promptSaveIfNeeded('agent')) {
                   setIsAgentSidebarOpen(true);
@@ -1265,6 +1436,83 @@ export default function QueryPage() {
           onChartsUpdated={reloadChartConfig}
         />
       </div>
+
+      {/* Dialog per eliminare query */}
+      {isDeleteDialogOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          onClick={() => setIsDeleteDialogOpen(false)}
+        >
+          <div 
+            className="bg-gray-900 border border-gray-700 rounded-lg shadow-xl w-[500px]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-6 border-b border-gray-700">
+              <h2 className="text-lg font-medium text-white">
+                Rimuovi query dai preferiti
+              </h2>
+              <button
+                onClick={() => setIsDeleteDialogOpen(false)}
+                className="text-gray-400 hover:text-white transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="p-6">
+              <p className="text-gray-300 mb-6">
+                Sei sicuro di voler rimuovere questa query dai preferiti?
+              </p>
+              
+              {savedQueryTitle && (
+                <div className="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-6">
+                  <p className="text-sm text-gray-400 mb-1">Query da eliminare:</p>
+                  <p className="text-base font-medium text-white">{savedQueryTitle}</p>
+                </div>
+              )}
+              
+              <div className="bg-yellow-900/20 border border-yellow-500/30 rounded-lg p-4 mb-6">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm text-yellow-300 font-medium mb-1">Attenzione</p>
+                    <p className="text-sm text-yellow-200">
+                      Questa azione rimuoverà la query dai preferiti e eliminerà la configurazione dei grafici e KPI associati.
+                    </p>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="flex items-center justify-end gap-3">
+                <button
+                  onClick={() => setIsDeleteDialogOpen(false)}
+                  disabled={isDeletingQuery}
+                  className="px-4 py-2 text-gray-300 hover:text-white transition-colors disabled:text-gray-500"
+                >
+                  Annulla
+                </button>
+                <button
+                  onClick={deleteQuery}
+                  disabled={isDeletingQuery}
+                  className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
+                >
+                  {isDeletingQuery ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      Eliminazione...
+                    </>
+                  ) : (
+                    <>
+                      <Heart className="w-4 h-4" />
+                      Rimuovi dai preferiti
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Dialog per salvare query */}
       {isSaveDialogOpen && (
@@ -1324,6 +1572,114 @@ export default function QueryPage() {
           </div>
         </div>
       )}
+
+      {/* Schema Sidebar - Editabile */}
+      <div 
+        className={`fixed top-0 right-0 h-full transform transition-all duration-300 z-40 ${
+          isSchemaDialogOpen ? 'translate-x-0' : 'translate-x-full'
+        }`}
+        style={{
+          width: `${schemaSidebarWidth}vw`
+        }}
+      >
+        <div className="h-full bg-gray-900 border-l border-gray-700 flex flex-col">
+          {/* Resize Handle */}
+          <div
+            className="absolute left-0 top-0 bottom-0 w-1 hover:w-2 bg-gray-700 hover:bg-blue-500 cursor-col-resize transition-all z-50"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              const startX = e.clientX;
+              const startWidth = schemaSidebarWidth;
+
+              const handleMouseMove = (e: MouseEvent) => {
+                const deltaX = startX - e.clientX;
+                const newWidth = startWidth + (deltaX / window.innerWidth) * 100;
+                // Limita tra 20% e 60%
+                setSchemaSidebarWidth(Math.min(Math.max(newWidth, 20), 60));
+              };
+
+              const handleMouseUp = () => {
+                document.removeEventListener('mousemove', handleMouseMove);
+                document.removeEventListener('mouseup', handleMouseUp);
+              };
+
+              document.addEventListener('mousemove', handleMouseMove);
+              document.addEventListener('mouseup', handleMouseUp);
+            }}
+          />
+
+          {/* Header */}
+          <div className="flex items-center justify-between p-4 border-b border-gray-700 flex-shrink-0">
+            <div className="flex items-center gap-3">
+              <FileJson className="w-5 h-5 text-blue-400" />
+              <h2 className="text-base font-medium text-white">Schema</h2>
+            </div>
+            <div className="flex items-center gap-2">
+              {(() => {
+                const hasChanges = editableSchema !== originalSchema;
+                const isDisabled = isSavingSchema || !editableSchema.trim() || !hasChanges;
+                
+                return (
+                  <button
+                    onClick={saveSchemaChanges}
+                    disabled={isDisabled}
+                    className={`group flex items-center p-2 rounded-lg border transition-all duration-300 overflow-hidden ${
+                      hasChanges && !isSavingSchema
+                        ? 'bg-white text-black border-gray-300 hover:bg-gray-100'
+                        : 'bg-gray-800 text-gray-300 border-gray-700 hover:bg-gray-700 hover:text-white disabled:bg-gray-600 disabled:text-gray-500 disabled:cursor-not-allowed'
+                    }`}
+                    title={hasChanges ? "Salva modifiche allo schema" : "Nessuna modifica da salvare"}
+                  >
+                    {isSavingSchema ? (
+                      <RefreshCw size={16} className="flex-shrink-0 animate-spin" />
+                    ) : (
+                      <Check size={16} className="flex-shrink-0" />
+                    )}
+                    <span className="whitespace-nowrap text-sm font-medium opacity-0 group-hover:opacity-100 max-w-0 group-hover:max-w-xs group-hover:ml-2 transition-all duration-300">
+                      {isSavingSchema ? 'Salvataggio...' : 'Salva'}
+                    </span>
+                  </button>
+                );
+              })()}
+              <button
+                onClick={() => {
+                  setIsSchemaDialogOpen(false);
+                  setSchemaError(null);
+                }}
+                className="text-gray-400 hover:text-white transition-colors"
+                title="Chiudi"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+          
+          {/* Content - Editor JSON */}
+          <div className="flex-1 p-4 overflow-hidden flex flex-col">
+            {/* Errore validazione JSON */}
+            {schemaError && (
+              <div className="mb-3 bg-red-900/20 border border-red-500/30 rounded-lg p-3">
+                <div className="flex items-center gap-2 text-red-400">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                  <span className="text-sm">{schemaError}</span>
+                </div>
+              </div>
+            )}
+            
+            {/* Textarea editabile */}
+            <textarea
+              value={editableSchema}
+              onChange={(e) => {
+                setEditableSchema(e.target.value);
+                setSchemaError(null); // Reset errore quando si modifica
+              }}
+              className="flex-1 w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-gray-300 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none custom-scrollbar"
+              placeholder="Modifica lo schema JSON..."
+              spellCheck={false}
+            />
+          </div>
+        </div>
+      </div>
 
       {/* Notification Toast */}
       {notification && (

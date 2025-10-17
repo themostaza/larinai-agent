@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
-import { ArrowLeft, Loader2, Calendar, MessageSquare, Zap, CheckCircle, XCircle, Clock, Activity, Copy, Check, ThumbsUp, ThumbsDown } from 'lucide-react';
+import { ArrowLeft, Loader2, Calendar, MessageSquare, Zap, CheckCircle, XCircle, Clock, Activity, Copy, Check, ThumbsUp, ThumbsDown, ExternalLink } from 'lucide-react';
 import MarkdownMessage from '@/app/components/MarkdownMessage';
 import DatabaseQueryButton from '@/app/components/DatabaseQueryButton';
 import TextSearchIndicator from '@/app/components/TextSearchIndicator';
@@ -903,8 +903,26 @@ function QueriesView({ agentId }: QueriesViewProps) {
         {selectedQuery ? (
           <div className="h-full overflow-y-auto p-6">
             <div className="max-w-4xl mx-auto w-full">
+              {/* Pulsante Apri Query */}
+              {selectedQuery.sessionId && selectedQuery.body && (selectedQuery.body as { queryId?: string }).queryId && (
+                <div className="mb-4">
+                  <button
+                    onClick={() => {
+                      const queryId = (selectedQuery.body as { queryId?: string }).queryId;
+                      const url = `/agent/${agentId}/${selectedQuery.sessionId}/query/${queryId}?tab=charts`;
+                      window.open(url, '_blank');
+                    }}
+                    className="group flex items-center gap-2 px-4 py-2 bg-gray-800 text-gray-300 rounded-lg border border-gray-700 hover:bg-gray-700 hover:text-white transition-colors"
+                    title="Apri query in una nuova tab"
+                  >
+                    <ExternalLink size={16} />
+                    <span className="text-sm font-medium">Apri Query</span>
+                  </button>
+                </div>
+              )}
+              
               {/* Query Info */}
-              <div className="bg-gray-900 border border-gray-800 rounded-lg p-6">
+              <div className="bg-gray-900 border border-gray-800 rounded-lg p-6 mb-6">
                 <h2 className="text-2xl font-bold text-white mb-6">{selectedQuery.title}</h2>
                 
                 <div className="space-y-4">
@@ -931,6 +949,16 @@ function QueriesView({ agentId }: QueriesViewProps) {
                   </div>
                 </div>
               </div>
+
+              {/* SQL Query */}
+              {selectedQuery.query && (
+                <div className="bg-gray-900 border border-gray-700 rounded-lg p-4">
+                  <h3 className="text-sm font-semibold text-gray-300 mb-3">Query</h3>
+                  <pre className="text-sm text-gray-300 whitespace-pre-wrap font-mono overflow-x-auto">
+                    {String(selectedQuery.query)}
+                  </pre>
+                </div>
+              )}
             </div>
           </div>
         ) : (

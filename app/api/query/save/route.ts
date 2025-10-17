@@ -22,7 +22,8 @@ interface UpdateChartKPIRequest {
 
 interface UpdateTitleRequest {
   chatMessageId: string;
-  title: string;
+  title?: string;
+  chartKpi?: Record<string, unknown>;
 }
 
 export async function POST(request: NextRequest) {
@@ -245,24 +246,37 @@ export async function PUT(request: NextRequest) {
   }
 }
 
-// PATCH: Aggiorna solo il titolo di una query salvata
+// PATCH: Aggiorna il titolo e/o il chart_kpi di una query salvata
 export async function PATCH(request: NextRequest) {
   try {
     const body: UpdateTitleRequest = await request.json();
-    const { chatMessageId, title } = body;
+    const { chatMessageId, title, chartKpi } = body;
 
-    // Validazione input
-    if (!chatMessageId || !title || !title.trim()) {
+    // Validazione input - almeno uno dei due campi deve essere presente
+    if (!chatMessageId) {
       return NextResponse.json(
         { 
           success: false, 
-          error: 'Campi richiesti: chatMessageId, title' 
+          error: 'Campo richiesto: chatMessageId' 
         },
         { status: 400 }
       );
     }
 
-    console.log('Updating title for message:', chatMessageId, 'new title:', title);
+    if (!title && !chartKpi) {
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'Almeno un campo da aggiornare è richiesto: title o chartKpi' 
+        },
+        { status: 400 }
+      );
+    }
+
+    console.log('Updating query for message:', chatMessageId, { 
+      updateTitle: !!title, 
+      updateChartKpi: !!chartKpi 
+    });
 
     // Verifica che la query salvata esista
     const { data: savedQuery } = await supabase
@@ -281,18 +295,25 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    // Aggiorna il titolo
+    // Costruisci l'oggetto di aggiornamento dinamicamente
+    const updateData: { title?: string; chart_kpi?: never } = {};
+    if (title && title.trim()) {
+      updateData.title = title.trim();
+    }
+    if (chartKpi) {
+      updateData.chart_kpi = chartKpi as never;
+    }
+
+    // Aggiorna i campi specificati
     const { data, error } = await supabase
       .from('query_saved')
-      .update({
-        title: title.trim()
-      })
+      .update(updateData)
       .eq('chat_message_id', chatMessageId)
       .select()
       .single();
 
     if (error) {
-      console.error('Error updating title:', error);
+      console.error('Error updating query:', error);
       return NextResponse.json(
         { 
           success: false, 
@@ -302,19 +323,24 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    console.log('Title updated successfully:', data.id);
+    console.log('Query updated successfully:', data.id);
 
     return NextResponse.json({
       success: true,
-      message: 'Titolo aggiornato con successo',
+      message: title && chartKpi 
+        ? 'Titolo e schema aggiornati con successo' 
+        : title 
+          ? 'Titolo aggiornato con successo'
+          : 'Schema aggiornato con successo',
       data: {
         id: data.id,
-        title: data.title
+        title: data.title,
+        chart_kpi: data.chart_kpi
       }
     });
 
   } catch (error) {
-    console.error('Error in update title API:', error);
+    console.error('Error in update query API:', error);
     return NextResponse.json(
       { 
         success: false, 
