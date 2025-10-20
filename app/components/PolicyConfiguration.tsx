@@ -3,17 +3,17 @@
 import React, { useState, useEffect } from 'react';
 import { Database, Loader2, ChevronDown } from 'lucide-react';
 
-interface TableACL {
+interface TablePolicy {
   enabled: boolean;
   operations: ('SELECT' | 'INSERT' | 'UPDATE' | 'DELETE')[];
   columns: string[]; // ['*'] for all, or specific columns
   rowFilter?: string; // Optional WHERE condition
 }
 
-interface ACLConfig {
+interface PolicyConfig {
   mode: 'whitelist' | 'blacklist';
   tables: {
-    [tableName: string]: TableACL;
+    [tableName: string]: TablePolicy;
   };
 }
 
@@ -32,7 +32,7 @@ interface SQLToolConfig {
     enableArithAbort: boolean;
     requestTimeout: number;
   };
-  acl?: ACLConfig;
+  acl?: PolicyConfig;
 }
 
 interface DbSchemaColumn {
@@ -64,32 +64,35 @@ interface DbSchema {
   tables: DbSchemaTable[];
 }
 
-interface ACLConfigurationProps {
+interface PolicyConfigurationProps {
   config: SQLToolConfig;
   onConfigChange: (config: SQLToolConfig) => void;
   onTestConnection: () => void;
   isTestingConnection: boolean;
 }
 
-export default function ACLConfiguration({ 
+export default function PolicyConfiguration({ 
   config, 
   onConfigChange, 
   onTestConnection, 
   isTestingConnection 
-}: ACLConfigurationProps) {
+}: PolicyConfigurationProps) {
   const [dbSchema, setDbSchema] = useState<DbSchema | null>(null);
   const [isLoadingSchema, setIsLoadingSchema] = useState(false);
   const [expandedTables, setExpandedTables] = useState<Set<string>>(new Set());
+  const [obsoletePolicies, setObsoletePolicies] = useState<{
+    tables: string[];
+    columns: { table: string; columns: string[] }[];
+  }>({ tables: [], columns: [] });
 
-  // Initialize ACL if not present
-  const acl = config.acl || { mode: 'whitelist', tables: {} };
+  // Initialize Policy if not present - always use whitelist mode
+  const policy = { 
+    mode: 'whitelist' as const, 
+    tables: config.acl?.tables || {} 
+  };
 
-  // Load schema on mount if connection is configured
-  useEffect(() => {
-    if (config.database.server && config.database.database) {
-      loadSchema();
-    }
-  }, []);
+  // Don't load schema automatically to improve performance
+  // Schema will be loaded only when user clicks "Load Schema" button
 
   const loadSchema = async () => {
     setIsLoadingSchema(true);
@@ -100,6 +103,8 @@ export default function ACLConfiguration({
 
       if (data.success) {
         setDbSchema(data.schema);
+        // Check for obsolete policies after loading schema
+        checkObsoletePolicies(data.schema);
       } else {
         console.error('Failed to load schema:', data.error);
       }
@@ -110,26 +115,94 @@ export default function ACLConfiguration({
     }
   };
 
-  const updateACL = (updates: Partial<ACLConfig>) => {
+  // Check for obsolete policies when schema changes
+  const checkObsoletePolicies = (schema: DbSchema) => {
+    const obsoleteTables: string[] = [];
+    const obsoleteColumns: { table: string; columns: string[] }[] = [];
+    
+    // Get all table names from current schema
+    const currentTables = new Set(
+      schema.tables.map(t => `${t.schema}.${t.name}`)
+    );
+    
+    // Check each policy
+    Object.keys(policy.tables).forEach(policyTableName => {
+      if (!currentTables.has(policyTableName)) {
+        // Table doesn't exist in current schema
+        obsoleteTables.push(policyTableName);
+      } else {
+        // Table exists, check columns
+        const tablePolicy = policy.tables[policyTableName];
+        const schemaTable = schema.tables.find(
+          t => `${t.schema}.${t.name}` === policyTableName
+        );
+        
+        if (schemaTable && !tablePolicy.columns.includes('*')) {
+          // Check if specific columns still exist
+          const currentColumns = new Set(schemaTable.columns.map(c => c.name));
+          const invalidColumns = tablePolicy.columns.filter(
+            col => !currentColumns.has(col)
+          );
+          
+          if (invalidColumns.length > 0) {
+            obsoleteColumns.push({
+              table: policyTableName,
+              columns: invalidColumns
+            });
+          }
+        }
+      }
+    });
+    
+    setObsoletePolicies({ tables: obsoleteTables, columns: obsoleteColumns });
+  };
+
+  // Clean obsolete policies
+  const cleanObsoletePolicies = () => {
+    const newTables = { ...policy.tables };
+    
+    // Remove obsolete tables
+    obsoletePolicies.tables.forEach(tableName => {
+      delete newTables[tableName];
+    });
+    
+    // Remove obsolete columns
+    obsoletePolicies.columns.forEach(({ table, columns }) => {
+      if (newTables[table]) {
+        const validColumns = newTables[table].columns.filter(
+          col => !columns.includes(col)
+        );
+        newTables[table] = {
+          ...newTables[table],
+          columns: validColumns.length > 0 ? validColumns : ['*']
+        };
+      }
+    });
+    
+    updatePolicy({ tables: newTables });
+    setObsoletePolicies({ tables: [], columns: [] });
+  };
+
+  const updatePolicy = (updates: Partial<PolicyConfig>) => {
     onConfigChange({
       ...config,
       acl: {
-        ...acl,
+        ...policy,
         ...updates
       }
     });
   };
 
-  const updateTableACL = (tableName: string, updates: Partial<TableACL>) => {
-    const currentTable = acl.tables[tableName] || {
+  const updateTablePolicy = (tableName: string, updates: Partial<TablePolicy>) => {
+    const currentTable = policy.tables[tableName] || {
       enabled: true,
       operations: ['SELECT'],
       columns: ['*']
     };
 
-    updateACL({
+    updatePolicy({
       tables: {
-        ...acl.tables,
+        ...policy.tables,
         [tableName]: {
           ...currentTable,
           ...updates
@@ -151,18 +224,18 @@ export default function ACLConfiguration({
   const getTableFullName = (table: DbSchemaTable) => `${table.schema}.${table.name}`;
 
   const isTableEnabled = (tableName: string) => {
-    const tableACL = acl.tables[tableName];
-    if (acl.mode === 'whitelist') {
-      return tableACL?.enabled === true;
+    const tablePolicy = policy.tables[tableName];
+    if (policy.mode === 'whitelist') {
+      return tablePolicy?.enabled === true;
     } else {
-      return tableACL?.enabled !== false;
+      return tablePolicy?.enabled !== false;
     }
   };
 
   const toggleAllTables = (enabled: boolean) => {
     if (!dbSchema) return;
     
-    const newTables: { [key: string]: TableACL } = {};
+    const newTables: { [key: string]: TablePolicy } = {};
     dbSchema.tables.forEach(table => {
       const tableName = getTableFullName(table);
       newTables[tableName] = {
@@ -172,29 +245,91 @@ export default function ACLConfiguration({
       };
     });
     
-    updateACL({ tables: newTables });
+    updatePolicy({ tables: newTables });
   };
+
+  const hasPolicies = Object.keys(policy.tables).length > 0;
 
   if (!dbSchema && !isLoadingSchema) {
     return (
-      <div className="bg-gray-800 rounded-lg border border-gray-700 p-6">
-        <div className="text-center">
-          <Database size={48} className="mx-auto text-gray-500 mb-4" />
-          <h3 className="text-lg font-semibold text-white mb-2">Schema non caricato</h3>
-          <p className="text-sm text-gray-400 mb-4">
-            Prima di configurare l&apos;ACL, è necessario testare la connessione al database per ottenere lo schema.
+      <div className="space-y-4">
+        {/* Info Banner */}
+        <div className="bg-blue-900/20 border border-blue-700/50 rounded-lg p-3">
+          <p className="text-sm text-blue-300">
+            ℹ️ Modalità <strong>Whitelist</strong>: solo le tabelle abilitate esplicitamente sono accessibili all&apos;agent.
           </p>
-          <button
-            type="button"
-            onClick={() => {
-              onTestConnection();
-              setTimeout(loadSchema, 1000);
-            }}
-            disabled={isTestingConnection}
-            className="px-4 py-2 bg-white text-black font-medium rounded-lg hover:bg-gray-100 transition-colors disabled:opacity-50"
-          >
-            {isTestingConnection ? 'Caricamento...' : 'Carica Schema Database'}
-          </button>
+        </div>
+
+        {/* Existing Policies Preview */}
+        {hasPolicies && (
+          <div className="bg-gray-800 rounded-lg border border-gray-700 p-4">
+            <h3 className="text-sm font-semibold text-white mb-3">
+              Policy Configurate ({Object.keys(policy.tables).length})
+            </h3>
+            <div className="space-y-2 max-h-60 overflow-y-auto">
+              {Object.entries(policy.tables).map(([tableName, tablePolicy]) => (
+                <div key={tableName} className="bg-gray-900 rounded p-3 border border-gray-700">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-mono text-white break-all">{tableName}</div>
+                      <div className="text-[10px] text-gray-400 mt-1">
+                        {tablePolicy.enabled ? '✓ Abilitata' : '✗ Disabilitata'} • 
+                        {' '}{tablePolicy.operations.join(', ')} • 
+                        {' '}{tablePolicy.columns.includes('*') ? 'Tutte le colonne' : `${tablePolicy.columns.length} colonne`}
+                      </div>
+                      {tablePolicy.rowFilter && (
+                        <div className="text-[10px] text-gray-500 mt-1 font-mono">
+                          Filtro: {tablePolicy.rowFilter}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Warning to load schema */}
+        <div className="bg-yellow-900/20 border border-yellow-700/50 rounded-lg p-4">
+          <div className="flex items-start gap-3">
+            <div className="flex-1">
+              <h3 className="text-sm font-semibold text-yellow-300 mb-2">
+                ⚠️ Schema Database non caricato
+              </h3>
+              <p className="text-xs text-yellow-200">
+                {hasPolicies 
+                  ? 'Hai policy configurate ma lo schema del database non è caricato. Carica lo schema per verificare se le policy sono ancora valide e per configurarne di nuove.'
+                  : 'Per configurare le policy di accesso, è necessario prima caricare lo schema del database.'
+                }
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Load Schema Button */}
+        <div className="bg-gray-800 rounded-lg border border-gray-700 p-6">
+          <div className="text-center">
+            <Database size={48} className="mx-auto text-gray-500 mb-4" />
+            <button
+              type="button"
+              onClick={() => {
+                onTestConnection();
+                setTimeout(loadSchema, 1000);
+              }}
+              disabled={isTestingConnection}
+              className="px-4 py-2 bg-white text-black font-medium rounded-lg hover:bg-gray-100 transition-colors disabled:opacity-50"
+            >
+              {isTestingConnection ? (
+                <span className="flex items-center gap-2">
+                  <Loader2 className="animate-spin" size={16} />
+                  Caricamento Schema...
+                </span>
+              ) : (
+                'Carica Schema Database'
+              )}
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -211,40 +346,65 @@ export default function ACLConfiguration({
     );
   }
 
+  const hasObsoletePolicies = obsoletePolicies.tables.length > 0 || obsoletePolicies.columns.length > 0;
+
   return (
     <div className="space-y-4">
-      {/* ACL Mode */}
-      <div className="bg-gray-800 rounded-lg border border-gray-700 p-4">
-        <label className="block text-sm font-medium text-gray-300 mb-3">
-          Modalità ACL
-        </label>
-        <div className="space-y-2">
-          <label className="flex items-center gap-3 p-3 bg-gray-900 rounded-lg cursor-pointer hover:bg-gray-850 transition-colors">
-            <input
-              type="radio"
-              checked={acl.mode === 'whitelist'}
-              onChange={() => updateACL({ mode: 'whitelist' })}
-              className="w-4 h-4"
-            />
-            <div>
-              <div className="text-sm font-medium text-white">Whitelist (Consigliato)</div>
-              <div className="text-xs text-gray-400">Solo le tabelle abilitate sono accessibili</div>
-            </div>
-          </label>
-          <label className="flex items-center gap-3 p-3 bg-gray-900 rounded-lg cursor-pointer hover:bg-gray-850 transition-colors">
-            <input
-              type="radio"
-              checked={acl.mode === 'blacklist'}
-              onChange={() => updateACL({ mode: 'blacklist' })}
-              className="w-4 h-4"
-            />
-            <div>
-              <div className="text-sm font-medium text-white">Blacklist</div>
-              <div className="text-xs text-gray-400">Tutte le tabelle sono accessibili tranne quelle disabilitate</div>
-            </div>
-          </label>
-        </div>
+      {/* Info Banner */}
+      <div className="bg-blue-900/20 border border-blue-700/50 rounded-lg p-3">
+        <p className="text-sm text-blue-300">
+          ℹ️ Modalità <strong>Whitelist</strong>: solo le tabelle abilitate esplicitamente sono accessibili all&apos;agent.
+        </p>
       </div>
+
+      {/* Obsolete Policies Warning */}
+      {hasObsoletePolicies && (
+        <div className="bg-yellow-900/20 border border-yellow-700/50 rounded-lg p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex-1">
+              <h3 className="text-sm font-semibold text-yellow-300 mb-2">
+                ⚠️ Policy Obsolete Rilevate
+              </h3>
+              <div className="text-xs text-yellow-200 space-y-2">
+                {obsoletePolicies.tables.length > 0 && (
+                  <div>
+                    <p className="font-medium">
+                      • <strong>{obsoletePolicies.tables.length}</strong> {obsoletePolicies.tables.length === 1 ? 'tabella' : 'tabelle'} non {obsoletePolicies.tables.length === 1 ? 'esiste' : 'esistono'} più nello schema attuale:
+                    </p>
+                    <div className="font-mono text-yellow-300 ml-4 mt-1">
+                      {obsoletePolicies.tables.map(t => (
+                        <div key={t}>- {t}</div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {obsoletePolicies.columns.length > 0 && (
+                  <div>
+                    <p className="font-medium">
+                      • <strong>{obsoletePolicies.columns.length}</strong> {obsoletePolicies.columns.length === 1 ? 'tabella ha colonne' : 'tabelle hanno colonne'} non più esistenti:
+                    </p>
+                    <div className="ml-4 mt-1 space-y-1">
+                      {obsoletePolicies.columns.map(({ table, columns }) => (
+                        <div key={table}>
+                          <span className="font-mono text-yellow-300">{table}</span>
+                          <span className="text-yellow-200">: {columns.join(', ')}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={cleanObsoletePolicies}
+              className="px-3 py-1.5 bg-yellow-600 text-white text-xs font-medium rounded-lg hover:bg-yellow-500 transition-colors flex-shrink-0 whitespace-nowrap"
+            >
+              Rimuovi Policy Obsolete
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Quick Actions */}
       <div className="bg-gray-800 rounded-lg border border-gray-700 p-4">
@@ -264,16 +424,16 @@ export default function ACLConfiguration({
           <button
             type="button"
             onClick={() => toggleAllTables(true)}
-            className="flex-1 px-3 py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-500 transition-colors"
+            className="w-fit px-4 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-800 border border-gray-700 transition-colors"
           >
-            ✓ Abilita Tutte
+            Abilita Tutte
           </button>
           <button
             type="button"
             onClick={() => toggleAllTables(false)}
-            className="flex-1 px-3 py-2 bg-red-600 text-white text-sm rounded-lg hover:bg-red-500 transition-colors"
+            className="w-fit px-4 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-800 border border-gray-700 transition-colors"
           >
-            ✗ Disabilita Tutte
+            Disabilita Tutte
           </button>
         </div>
       </div>
@@ -288,9 +448,10 @@ export default function ACLConfiguration({
         <div className="max-h-[500px] overflow-y-auto">
           {dbSchema?.tables.map((table) => {
             const tableName = getTableFullName(table);
-            const tableACL = acl.tables[tableName];
+            const tablePolicy = policy.tables[tableName];
             const enabled = isTableEnabled(tableName);
             const isExpanded = expandedTables.has(tableName);
+            const hasObsoleteColumns = obsoletePolicies.columns.find(oc => oc.table === tableName);
 
             return (
               <div key={tableName} className="border-b border-gray-700 last:border-b-0">
@@ -308,15 +469,27 @@ export default function ACLConfiguration({
                       />
                     </button>
                     <div className="flex-1">
-                      <div className="text-sm font-medium text-white font-mono">{tableName}</div>
+                      <div className="flex items-center gap-2">
+                        <div className="text-sm font-medium text-white font-mono">{tableName}</div>
+                        {hasObsoleteColumns && (
+                          <span className="px-2 py-0.5 bg-yellow-900/50 border border-yellow-700/50 text-yellow-300 text-[10px] font-medium rounded">
+                            Colonne Obsolete
+                          </span>
+                        )}
+                      </div>
                       {table.description && (
                         <div className="text-xs text-gray-400 mt-0.5">{table.description}</div>
+                      )}
+                      {hasObsoleteColumns && (
+                        <div className="text-xs text-yellow-400 mt-1">
+                          ⚠️ Colonne non più esistenti: {hasObsoleteColumns.columns.join(', ')}
+                        </div>
                       )}
                     </div>
                   </div>
                   <button
                     type="button"
-                    onClick={() => updateTableACL(tableName, { enabled: !enabled })}
+                    onClick={() => updateTablePolicy(tableName, { enabled: !enabled })}
                     className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
                       enabled ? 'bg-blue-600' : 'bg-gray-600'
                     }`}
@@ -345,13 +518,13 @@ export default function ACLConfiguration({
                           >
                             <input
                               type="checkbox"
-                              checked={tableACL?.operations.includes(op) || false}
+                              checked={tablePolicy?.operations.includes(op) || false}
                               onChange={(e) => {
-                                const currentOps = tableACL?.operations || ['SELECT'];
+                                const currentOps = tablePolicy?.operations || ['SELECT'];
                                 const newOps = e.target.checked
                                   ? [...currentOps, op]
                                   : currentOps.filter((o) => o !== op);
-                                updateTableACL(tableName, { operations: newOps });
+                                updateTablePolicy(tableName, { operations: newOps });
                               }}
                               className="w-3 h-3"
                             />
@@ -370,9 +543,9 @@ export default function ACLConfiguration({
                         <label className="flex items-center gap-2 px-3 py-1.5 bg-gray-900 rounded text-xs cursor-pointer hover:bg-gray-800 transition-colors">
                           <input
                             type="checkbox"
-                            checked={tableACL?.columns.includes('*') || !tableACL}
+                            checked={tablePolicy?.columns.includes('*') || !tablePolicy}
                             onChange={(e) => {
-                              updateTableACL(tableName, {
+                              updateTablePolicy(tableName, {
                                 columns: e.target.checked ? ['*'] : []
                               });
                             }}
@@ -380,7 +553,7 @@ export default function ACLConfiguration({
                           />
                           <span className="text-gray-300 font-semibold">Tutte le colonne (*)</span>
                         </label>
-                        {!(tableACL?.columns.includes('*') || !tableACL) && (
+                        {!(tablePolicy?.columns.includes('*') || !tablePolicy) && (
                           <div className="pl-5 space-y-1 max-h-32 overflow-y-auto">
                             {table.columns.map((col) => (
                               <label
@@ -389,13 +562,13 @@ export default function ACLConfiguration({
                               >
                                 <input
                                   type="checkbox"
-                                  checked={tableACL?.columns.includes(col.name) || false}
+                                  checked={tablePolicy?.columns.includes(col.name) || false}
                                   onChange={(e) => {
-                                    const currentCols = tableACL?.columns.filter(c => c !== '*') || [];
+                                    const currentCols = tablePolicy?.columns.filter(c => c !== '*') || [];
                                     const newCols = e.target.checked
                                       ? [...currentCols, col.name]
                                       : currentCols.filter((c) => c !== col.name);
-                                    updateTableACL(tableName, { columns: newCols });
+                                    updateTablePolicy(tableName, { columns: newCols });
                                   }}
                                   className="w-3 h-3"
                                 />
@@ -415,8 +588,8 @@ export default function ACLConfiguration({
                       </label>
                       <input
                         type="text"
-                        value={tableACL?.rowFilter || ''}
-                        onChange={(e) => updateTableACL(tableName, { rowFilter: e.target.value })}
+                        value={tablePolicy?.rowFilter || ''}
+                        onChange={(e) => updateTablePolicy(tableName, { rowFilter: e.target.value })}
                         placeholder="es: organization_id = '{user_org}' AND active = 1"
                         className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded text-xs text-white font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />

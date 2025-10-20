@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { ArrowLeft, Save, Loader2, Database, FileText, X, ExternalLink } from 'lucide-react';
-import ACLConfiguration from '@/app/components/ACLConfiguration';
+import PolicyConfiguration from '@/app/components/PolicyConfiguration';
 
 interface Agent {
   id: string;
@@ -24,17 +24,17 @@ interface ToolConfig {
   config?: SQLToolConfig | TextSearchToolConfig | Record<string, unknown>;
 }
 
-interface TableACL {
+interface TablePolicy {
   enabled: boolean;
   operations: ('SELECT' | 'INSERT' | 'UPDATE' | 'DELETE')[];
   columns: string[]; // ['*'] for all, or specific columns
   rowFilter?: string; // Optional WHERE condition
 }
 
-interface ACLConfig {
+interface PolicyConfig {
   mode: 'whitelist' | 'blacklist';
   tables: {
-    [tableName: string]: TableACL;
+    [tableName: string]: TablePolicy;
   };
 }
 
@@ -53,7 +53,7 @@ interface SQLToolConfig {
     enableArithAbort: boolean;
     requestTimeout: number;
   };
-  acl?: ACLConfig;
+  acl?: PolicyConfig;
 }
 
 interface TextSearchToolConfig {
@@ -575,7 +575,7 @@ function SQLToolConfigSheet({ config, onSave, onClose }: SQLToolConfigSheetProps
   const [showSchemaDialog, setShowSchemaDialog] = useState(false);
   const [dbSchema, setDbSchema] = useState<DbSchema | null>(null);
   const [isCopied, setIsCopied] = useState(false);
-  const [activeTab, setActiveTab] = useState<'database' | 'acl'>('database');
+  const [activeTab, setActiveTab] = useState<'database' | 'policy'>('database');
 
   // Check if there are unsaved changes
   const hasChanges = () => {
@@ -703,14 +703,14 @@ function SQLToolConfigSheet({ config, onSave, onClose }: SQLToolConfigSheetProps
                 </button>
                 <button
                   type="button"
-                  onClick={() => setActiveTab('acl')}
+                  onClick={() => setActiveTab('policy')}
                   className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
-                    activeTab === 'acl'
+                    activeTab === 'policy'
                       ? 'bg-gray-700 text-white border border-gray-600'
                       : 'bg-gray-800 text-gray-400 hover:text-gray-300 border border-gray-700'
                   }`}
                 >
-                  ACL
+                  Policy
                 </button>
               </div>
 
@@ -932,9 +932,9 @@ function SQLToolConfigSheet({ config, onSave, onClose }: SQLToolConfigSheetProps
               </>
               )}
 
-              {/* ACL Tab */}
-              {activeTab === 'acl' && (
-                <ACLConfiguration
+              {/* Policy Tab */}
+              {activeTab === 'policy' && (
+                <PolicyConfiguration
                   config={formData}
                   onConfigChange={setFormData}
                   onTestConnection={handleTestConnection}
