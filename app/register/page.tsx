@@ -1,24 +1,37 @@
 'use client';
 
-import { useState, FormEvent } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, FormEvent, useEffect, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { AlertCircle, CheckCircle2, Loader2, X } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Loader2, X, Mail, Eye, EyeOff } from 'lucide-react';
 
-export default function RegisterPage() {
+function RegisterForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isFromInvite, setIsFromInvite] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   
   // OTP Modal State
   const [showOtpModal, setShowOtpModal] = useState(false);
   const [otpCode, setOtpCode] = useState('');
   const [otpError, setOtpError] = useState('');
   const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
+
+  // Pre-popola email se arriva da invito
+  useEffect(() => {
+    const emailParam = searchParams.get('email');
+    if (emailParam) {
+      setEmail(decodeURIComponent(emailParam));
+      setIsFromInvite(true);
+    }
+  }, [searchParams]);
 
   // Validazione password in tempo reale
   const passwordValidation = {
@@ -165,6 +178,21 @@ export default function RegisterPage() {
               </div>
             )}
 
+            {/* Invite Info Message */}
+            {isFromInvite && !success && (
+              <div className="bg-blue-500/10 border border-blue-500/50 rounded-lg p-4 flex items-start gap-3">
+                <Mail className="text-blue-500 flex-shrink-0 mt-0.5" size={20} />
+                <div>
+                  <p className="text-blue-400 text-sm font-semibold mb-1">
+                    Hai ricevuto un invito!
+                  </p>
+                  <p className="text-blue-300 text-sm">
+                    Completa la registrazione per accettare l&apos;invito e accedere all&apos;organizzazione.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Email Field */}
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-gray-300 mb-2">
@@ -187,16 +215,26 @@ export default function RegisterPage() {
               <label htmlFor="password" className="block text-sm font-medium text-gray-300 mb-2">
                 Password
               </label>
-              <input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-white/20 text-white placeholder-gray-500"
-                placeholder="••••••••"
-                disabled={isLoading || !!success}
-              />
+              <div className="relative">
+                <input
+                  id="password"
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  className="w-full px-4 py-3 pr-12 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-white/20 text-white placeholder-gray-500"
+                  placeholder="••••••••"
+                  disabled={isLoading || !!success}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white transition-colors"
+                  tabIndex={-1}
+                >
+                  {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                </button>
+              </div>
 
               {/* Password Requirements */}
               {password && (
@@ -226,16 +264,26 @@ export default function RegisterPage() {
               <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-300 mb-2">
                 Conferma Password
               </label>
-              <input
-                id="confirmPassword"
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                required
-                className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-white/20 text-white placeholder-gray-500"
-                placeholder="••••••••"
-                disabled={isLoading || !!success}
-              />
+              <div className="relative">
+                <input
+                  id="confirmPassword"
+                  type={showConfirmPassword ? 'text' : 'password'}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  required
+                  className="w-full px-4 py-3 pr-12 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-white/20 text-white placeholder-gray-500"
+                  placeholder="••••••••"
+                  disabled={isLoading || !!success}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white transition-colors"
+                  tabIndex={-1}
+                >
+                  {showConfirmPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                </button>
+              </div>
               {confirmPassword && password !== confirmPassword && (
                 <p className="mt-2 text-sm text-red-400">Le password non coincidono</p>
               )}
@@ -398,3 +446,14 @@ function PasswordRequirement({ met, text }: { met: boolean; text: string }) {
   );
 }
 
+export default function RegisterPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-black text-white flex items-center justify-center">
+        <Loader2 className="animate-spin" size={32} />
+      </div>
+    }>
+      <RegisterForm />
+    </Suspense>
+  );
+}

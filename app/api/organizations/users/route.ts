@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createClient as createAdminClient } from '@supabase/supabase-js';
+import { sendInviteExistingUser, sendInviteNewUser } from '@/lib/email/send';
 
 // GET: Ottieni tutti gli utenti di un'organizzazione (attivi + invitati)
 export async function GET(request: NextRequest) {
@@ -252,16 +253,43 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Ottieni il nome dell'organizzazione e l'email dell'utente che invita
+    const { data: orgData, error: orgError } = await supabase
+      .from('organization')
+      .select('name')
+      .eq('id', organizationId)
+      .single();
+
+    if (orgError || !orgData) {
+      console.error('Error fetching organization:', orgError);
+      return NextResponse.json(
+        { success: false, error: 'Organizzazione non trovata' },
+        { status: 404 }
+      );
+    }
+
+    const { data: { user: inviterUser }, error: inviterError } = await supabaseAdmin.auth.admin.getUserById(user.id);
+    
+    if (inviterError || !inviterUser?.email) {
+      console.error('Error fetching inviter user:', inviterError);
+      return NextResponse.json(
+        { success: false, error: 'Errore nel recupero dei dati dell\'utente' },
+        { status: 500 }
+      );
+    }
+
     // Crea l'invito nella tabella invited_users
-    const { error: insertError } = await supabase
+    const { data: inviteData, error: insertError } = await supabase
       .from('invited_users')
       .insert({
         organization_id: organizationId,
         email: email.toLowerCase(),
         role: role,
-      });
+      })
+      .select('public_invitation_id')
+      .single();
 
-    if (insertError) {
+    if (insertError || !inviteData) {
       console.error('Error creating invite:', insertError);
       return NextResponse.json(
         { success: false, error: 'Errore nella creazione dell\'invito' },
@@ -269,9 +297,48 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Prepara le informazioni per l'email
+    const organizationName = orgData.name || 'Organizzazione';
+    const invitedByEmail = inviterUser.email;
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    
+    // Invia l'email appropriata
+    let emailResult;
+    
+    if (existingUser) {
+      // Utente già registrato - invia link a pagina di accettazione invito
+      const inviteLink = `${baseUrl}/invite/${inviteData.public_invitation_id}`;
+      
+      emailResult = await sendInviteExistingUser({
+        to: email.toLowerCase(),
+        organizationName,
+        invitedByEmail,
+        inviteLink,
+        role,
+      });
+    } else {
+      // Nuovo utente - invia link a registrazione
+      const registerLink = `${baseUrl}/register?email=${encodeURIComponent(email.toLowerCase())}`;
+      
+      emailResult = await sendInviteNewUser({
+        to: email.toLowerCase(),
+        organizationName,
+        invitedByEmail,
+        registerLink,
+        role,
+      });
+    }
+
+    if (!emailResult.success) {
+      console.error('Error sending invite email:', emailResult.error);
+      // Non blocchiamo l'invito se l'email fallisce, ma logghiamo l'errore
+      // L'invito è comunque stato creato
+    }
+
     return NextResponse.json({
       success: true,
       message: 'Invito creato con successo',
+      emailSent: emailResult.success,
     });
 
   } catch (error) {

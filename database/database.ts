@@ -165,21 +165,27 @@ export type Database = {
           email: string | null
           id: number
           organization_id: string | null
+          public_invitation_id: string | null
           role: string | null
+          status: string | null
         }
         Insert: {
           created_at?: string
           email?: string | null
           id?: number
           organization_id?: string | null
+          public_invitation_id?: string | null
           role?: string | null
+          status?: string | null
         }
         Update: {
           created_at?: string
           email?: string | null
           id?: number
           organization_id?: string | null
+          public_invitation_id?: string | null
           role?: string | null
+          status?: string | null
         }
         Relationships: [
           {

@@ -70,6 +70,11 @@ export default function OrganizationSettingsPage() {
       return;
     }
 
+    if (newName.trim().length > 50) {
+      setNameError('Il nome non può superare i 50 caratteri');
+      return;
+    }
+
     if (newName.trim() === organization?.name) {
       setNameError('Il nome non è cambiato');
       return;
@@ -243,10 +248,14 @@ export default function OrganizationSettingsPage() {
                     setNewName(e.target.value);
                     setNameError('');
                   }}
+                  maxLength={50}
                   className="w-full px-3 py-1.5 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-white/20 text-white placeholder-gray-500 text-sm"
                   placeholder="Nome organizzazione"
                   disabled={isSavingName}
                 />
+                <p className="mt-1 text-xs text-gray-500">
+                  {newName.length}/50 caratteri
+                </p>
               </div>
 
               <button

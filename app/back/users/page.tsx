@@ -63,8 +63,8 @@ export default function ManageUsersPage() {
         return;
       }
 
-      // Filtra solo organizzazioni dove l'utente è admin
-      const adminOrgs = data.organizations.filter((org: Organization) => org.role === 'admin');
+      // Filtra solo organizzazioni dove l'utente è admin o owner
+      const adminOrgs = data.organizations.filter((org: Organization) => org.role === 'admin' || org.role === 'owner');
       
       if (adminOrgs.length === 0) {
         setError('Non hai permessi di admin per nessuna organizzazione');
@@ -234,7 +234,8 @@ export default function ManageUsersPage() {
     );
   }
 
-  const isAdmin = userRole === 'admin';
+  const isOwner = organizations.find(org => org.id === selectedOrgId)?.role === 'owner';
+  const isAdmin = userRole === 'admin' || isOwner; // Owner ha tutti i permessi dell'admin
 
   return (
     <div className="min-h-screen bg-black text-white">

@@ -78,31 +78,75 @@ export async function POST(request: NextRequest) {
         // Crea un client Supabase con service role per operazioni admin
         const supabaseAdmin = createAdminClient();
         
-        // Cerca inviti per questa email
+        // Cerca inviti pending per questa email (status null o non specificato)
         const { data: invites, error: invitesError } = await supabaseAdmin
           .from('invited_users')
           .select('*')
-          .eq('email', email.toLowerCase());
+          .eq('email', email.toLowerCase())
+          .is('status', null); // Solo inviti pending
 
         if (!invitesError && invites && invites.length > 0) {
+          let addedCount = 0;
+          
           // Aggiungi l'utente a tutte le organizzazioni per cui è stato invitato
           for (const invite of invites) {
-            await supabaseAdmin
-              .from('link_organization_user')
-              .insert({
-                user_id: data.user.id,
-                organization_id: invite.organization_id,
-                role: invite.role || 'user',
-              });
+            // Verifica se l'invito è scaduto (>3 giorni)
+            const createdAt = new Date(invite.created_at);
+            const now = new Date();
+            const daysDiff = (now.getTime() - createdAt.getTime()) / (1000 * 60 * 60 * 24);
+            
+            if (daysDiff > 3) {
+              // Invito scaduto, marca come rejected
+              await supabaseAdmin
+                .from('invited_users')
+                .update({ status: 'rejected' })
+                .eq('id', invite.id);
+              
+              console.log(`Invite ${invite.id} expired, marked as rejected`);
+              continue; // Salta questo invito
+            }
 
-            // Elimina l'invito dopo averlo processato
+            // Salta se non c'è organization_id
+            if (!invite.organization_id) {
+              console.log(`Invite ${invite.id} has no organization_id, skipping`);
+              continue;
+            }
+
+            // Verifica se l'utente è già nell'organizzazione
+            const { data: existingMembership } = await supabaseAdmin
+              .from('link_organization_user')
+              .select('id')
+              .eq('user_id', data.user.id)
+              .eq('organization_id', invite.organization_id)
+              .maybeSingle();
+
+            if (!existingMembership) {
+              // Aggiungi l'utente all'organizzazione
+              const { error: insertError } = await supabaseAdmin
+                .from('link_organization_user')
+                .insert({
+                  user_id: data.user.id,
+                  organization_id: invite.organization_id,
+                  role: invite.role || 'user',
+                });
+
+              if (!insertError) {
+                addedCount++;
+              } else {
+                console.error('Error adding user to organization:', insertError);
+              }
+            }
+
+            // Marca l'invito come confirmed
             await supabaseAdmin
               .from('invited_users')
-              .delete()
+              .update({ status: 'confirmed' })
               .eq('id', invite.id);
           }
 
-          console.log(`User ${email} added to ${invites.length} organization(s) based on invites`);
+          if (addedCount > 0) {
+            console.log(`User ${email} added to ${addedCount} organization(s) based on invites`);
+          }
         }
       } catch (inviteError) {
         console.error('Error processing invites during registration:', inviteError);

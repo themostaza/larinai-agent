@@ -128,6 +128,13 @@ export async function PATCH(
       );
     }
 
+    if (name.trim().length > 50) {
+      return NextResponse.json(
+        { success: false, error: 'Il nome non può superare i 50 caratteri' },
+        { status: 400 }
+      );
+    }
+
     // Aggiorna l'organizzazione
     const { data: updatedOrganization, error: updateError } = await supabase
       .from('organization')

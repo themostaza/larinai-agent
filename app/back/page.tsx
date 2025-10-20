@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { LogOut, UserPlus, Loader2, Bot, Settings, X, AlertCircle, BarChart3, Copy, Database } from 'lucide-react';
+import { LogOut, UserPlus, Loader2, Bot, Settings, X, AlertCircle, BarChart3, Copy, Database, Info, Building2, Mail, User } from 'lucide-react';
 import DuplicateAgentDialog from '@/app/components/DuplicateAgentDialog';
 
 interface Organization {
@@ -43,6 +43,9 @@ export default function BackOfficePage() {
   const [newOrgName, setNewOrgName] = useState('');
   const [isCreatingOrg, setIsCreatingOrg] = useState(false);
   const [createOrgError, setCreateOrgError] = useState('');
+
+  // Info Dialog State
+  const [showInfoDialog, setShowInfoDialog] = useState(false);
 
   // Carica le organizzazioni al mount
   useEffect(() => {
@@ -291,6 +294,25 @@ export default function BackOfficePage() {
 
             {/* Right: Actions */}
             <div className="flex items-center gap-2">
+              {/* Info Button */}
+              <button
+                onClick={() => setShowInfoDialog(true)}
+                className="p-1.5 bg-gray-800 border border-gray-700 text-white rounded-lg hover:bg-gray-700 transition-colors"
+                title="Informazioni"
+              >
+                <Info size={16} />
+              </button>
+
+              {/* Profile Button */}
+              <button
+                onClick={() => router.push('/back/profile')}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-800 border border-gray-700 text-white text-sm rounded-lg hover:bg-gray-700 transition-colors"
+                title="Profilo"
+              >
+                <User size={16} />
+                <span>Profilo</span>
+              </button>
+
               {/* Manage Users Button - Solo per admin */}
               {isAdmin && (
                 <button
@@ -298,7 +320,7 @@ export default function BackOfficePage() {
                   onClick={() => router.push('/back/users')}
                 >
                   <UserPlus size={16} />
-                  <span>Manage Users</span>
+                  <span>Gestione utenti</span>
                 </button>
               )}
 
@@ -324,15 +346,37 @@ export default function BackOfficePage() {
           </div>
         )}
 
-        {/* No Organizations */}
-        {organizations.length === 0 && (
-          <div className="text-center py-12">
-            <p className="text-gray-400 text-lg">
-              Non sei ancora associato a nessuna organizzazione.
-            </p>
-            <p className="text-gray-500 mt-2">
-              Contatta un amministratore per essere aggiunto a un&apos;organizzazione.
-            </p>
+        {/* No Organizations - Empty State */}
+        {organizations.length === 0 && !isLoadingOrgs && (
+          <div className="flex items-center justify-center min-h-[calc(100vh-200px)]">
+            <div className="max-w-md w-full text-center">
+              <div className="mb-6 flex justify-center">
+                <div className="p-4 bg-gray-800 rounded-full">
+                  <Building2 size={48} className="text-gray-400" />
+                </div>
+              </div>
+              
+              <h2 className="text-2xl font-bold mb-3">Nessuna organizzazione</h2>
+              
+              <p className="text-gray-400 mb-6">
+                Per iniziare, crea una nuova organizzazione o attendi di ricevere un invito via email.
+              </p>
+
+              <button
+                onClick={handleCreateOrganization}
+                className="w-full max-w-xs mx-auto flex items-center justify-center gap-2 px-6 py-3 bg-white text-black font-semibold rounded-lg hover:bg-gray-100 transition-colors"
+              >
+                <Building2 size={20} />
+                Crea la tua organizzazione
+              </button>
+
+              <button
+                onClick={() => setShowInfoDialog(true)}
+                className="mt-4 text-gray-400 hover:text-white text-sm underline transition-colors"
+              >
+                Come funziona?
+              </button>
+            </div>
           </div>
         )}
 
@@ -360,7 +404,7 @@ export default function BackOfficePage() {
               <div className="text-center py-12 bg-gray-900 rounded-lg border border-gray-800">
                 <Bot size={48} className="mx-auto text-gray-600 mb-4" />
                 <p className="text-gray-400 text-lg">
-                  Nessun agent trovato per questa organizzazione.
+                  Nessun Agent trovato. Creane uno nuovo.
                 </p>
               </div>
             ) : (
@@ -597,12 +641,16 @@ export default function BackOfficePage() {
                       handleConfirmCreateOrganization();
                     }
                   }}
+                  maxLength={50}
                   required
                   autoFocus
                   className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-white/20 text-white placeholder-gray-500"
                   placeholder="es: La Mia Azienda"
                   disabled={isCreatingOrg}
                 />
+                <p className="mt-1 text-xs text-gray-500">
+                  {newOrgName.length}/50 caratteri
+                </p>
               </div>
 
               {/* Buttons */}
@@ -629,10 +677,78 @@ export default function BackOfficePage() {
                       Creazione...
                     </>
                   ) : (
-                    'Crea Organizzazione'
+                    'Crea'
                   )}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Info Dialog */}
+      {showInfoDialog && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-gray-900 rounded-lg border border-gray-800 p-8 max-w-lg w-full relative">
+            {/* Close Button */}
+            <button
+              onClick={() => setShowInfoDialog(false)}
+              className="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors"
+            >
+              <X size={20} />
+            </button>
+
+            {/* Modal Content */}
+            <div className="mb-6">
+              <h2 className="text-2xl font-bold mb-2">Come funziona?</h2>
+              <p className="text-gray-400 text-sm">
+                Ci sono due modi per accedere a un&apos;organizzazione
+              </p>
+            </div>
+
+            {/* Options */}
+            <div className="space-y-6">
+              {/* Option 1: Invito */}
+              <div className="flex gap-4">
+                <div className="flex-shrink-0">
+                  <div className="p-3 bg-blue-500/10 rounded-lg border border-blue-500/50">
+                    <Mail size={24} className="text-blue-400" />
+                  </div>
+                </div>
+                <div>
+                  <h3 className="font-semibold text-lg mb-2">Invito ad organizzazione esistente</h3>
+                  <p className="text-gray-400 text-sm leading-relaxed">
+                    Se ricevi un invito via email, clicca sul link per accedere automaticamente all&apos;organizzazione.
+                    Gli admin delle organizzazioni possono invitare nuovi utenti dalla sezione &quot;Manage Users&quot;.
+                  </p>
+                </div>
+              </div>
+
+              {/* Option 2: Crea */}
+              <div className="flex gap-4">
+                <div className="flex-shrink-0">
+                  <div className="p-3 bg-green-500/10 rounded-lg border border-green-500/50">
+                    <Building2 size={24} className="text-green-400" />
+                  </div>
+                </div>
+                <div>
+                  <h3 className="font-semibold text-lg mb-2">Crea nuova organizzazione</h3>
+                  <p className="text-gray-400 text-sm leading-relaxed">
+                    Puoi creare la tua organizzazione personale e diventarne automaticamente owner.
+                    Come owner, avrai tutti i privilegi di amministrazione e potrai invitare altri utenti.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="mt-8 pt-6 border-t border-gray-800">
+              <button
+                onClick={() => setShowInfoDialog(false)}
+                className="w-full px-6 py-3 bg-white text-black font-semibold rounded-lg hover:bg-gray-100 transition-colors"
+              >
+                Ho capito
+              </button>
             </div>
           </div>
         </div>

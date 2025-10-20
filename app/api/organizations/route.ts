@@ -90,6 +90,13 @@ export async function POST(request: Request) {
       );
     }
 
+    if (name.trim().length > 50) {
+      return NextResponse.json(
+        { success: false, error: 'Il nome non può superare i 50 caratteri' },
+        { status: 400 }
+      );
+    }
+
     // Crea la nuova organizzazione
     const { data: newOrganization, error: orgError } = await supabase
       .from('organization')
