@@ -55,7 +55,7 @@ export async function DELETE(request: NextRequest) {
       .eq('organization_id', invite.organization_id)
       .single();
 
-    if (orgError || !userOrg || userOrg.role !== 'admin') {
+    if (orgError || !userOrg || (userOrg.role !== 'admin' && userOrg.role !== 'owner')) {
       return NextResponse.json(
         { success: false, error: 'Non hai permessi di admin per questa organizzazione' },
         { status: 403 }

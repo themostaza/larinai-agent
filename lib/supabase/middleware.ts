@@ -69,6 +69,7 @@ export async function updateSession(request: NextRequest) {
       /^\/agent\/[^\/]+\/board/,  // /agent/[agentId]/board
       /^\/agent\/[^\/]+\/edit/,   // /agent/[agentId]/edit
       /^\/back\/users/,            // /back/users
+      /^\/back\/[^\/]+\/edit/,     // /back/[orgId]/edit (organization settings)
     ]
 
     const isAdminRoute = adminRoutePatterns.some(pattern => pattern.test(pathname))
@@ -96,8 +97,8 @@ export async function updateSession(request: NextRequest) {
             .eq('organization_id', agent.organization_id)
             .single()
 
-          if (!userOrg || userOrg.role !== 'admin') {
-            // Not admin, redirect to back
+          if (!userOrg || (userOrg.role !== 'admin' && userOrg.role !== 'owner')) {
+            // Not admin or owner, redirect to back
             const url = request.nextUrl.clone()
             url.pathname = '/back'
             return NextResponse.redirect(url)
@@ -115,13 +116,33 @@ export async function updateSession(request: NextRequest) {
           .select('role')
           .eq('user_id', user.id)
 
-        const isAdminOfAny = userOrgs?.some(org => org.role === 'admin')
+        const isAdminOfAny = userOrgs?.some(org => org.role === 'admin' || org.role === 'owner')
 
         if (!isAdminOfAny) {
-          // Not admin, redirect to back
+          // Not admin or owner, redirect to back
           const url = request.nextUrl.clone()
           url.pathname = '/back'
           return NextResponse.redirect(url)
+        }
+      } else if (pathname.match(/^\/back\/[^\/]+\/edit/)) {
+        // For /back/[orgId]/edit, check if user is owner of the organization
+        const orgMatch = pathname.match(/^\/back\/([^\/]+)\/edit/)
+        if (orgMatch) {
+          const orgId = orgMatch[1]
+          
+          const { data: userOrg } = await supabase
+            .from('link_organization_user')
+            .select('role')
+            .eq('user_id', user.id)
+            .eq('organization_id', orgId)
+            .single()
+
+          if (!userOrg || userOrg.role !== 'owner') {
+            // Not owner, redirect to back
+            const url = request.nextUrl.clone()
+            url.pathname = '/back'
+            return NextResponse.redirect(url)
+          }
         }
       }
     }

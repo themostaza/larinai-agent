@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { LogOut, UserPlus, Loader2, Bot, Settings, X, AlertCircle, BarChart3, Copy } from 'lucide-react';
+import { LogOut, UserPlus, Loader2, Bot, Settings, X, AlertCircle, BarChart3, Copy, Database } from 'lucide-react';
 import DuplicateAgentDialog from '@/app/components/DuplicateAgentDialog';
 
 interface Organization {
@@ -37,6 +37,12 @@ export default function BackOfficePage() {
   // Duplicate Agent Dialog State
   const [showDuplicateDialog, setShowDuplicateDialog] = useState(false);
   const [agentToDuplicate, setAgentToDuplicate] = useState<{ id: string; name: string } | null>(null);
+
+  // Create Organization Modal State
+  const [showCreateOrgModal, setShowCreateOrgModal] = useState(false);
+  const [newOrgName, setNewOrgName] = useState('');
+  const [isCreatingOrg, setIsCreatingOrg] = useState(false);
+  const [createOrgError, setCreateOrgError] = useState('');
 
   // Carica le organizzazioni al mount
   useEffect(() => {
@@ -180,7 +186,54 @@ export default function BackOfficePage() {
     }
   };
 
-  const isAdmin = userRole === 'admin';
+  const handleCreateOrganization = () => {
+    setShowCreateOrgModal(true);
+    setNewOrgName('');
+    setCreateOrgError('');
+  };
+
+  const handleConfirmCreateOrganization = async () => {
+    if (!newOrgName.trim()) {
+      setCreateOrgError('Il nome è obbligatorio');
+      return;
+    }
+
+    setIsCreatingOrg(true);
+    setCreateOrgError('');
+
+    try {
+      const response = await fetch('/api/organizations', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: newOrgName,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!data.success) {
+        setCreateOrgError(data.error || 'Errore nella creazione dell\'organizzazione');
+        setIsCreatingOrg(false);
+        return;
+      }
+
+      // Chiudi modal e ricarica le organizzazioni
+      setShowCreateOrgModal(false);
+      await fetchOrganizations();
+      // Seleziona la nuova organizzazione
+      setSelectedOrgId(data.organization.id);
+    } catch (err) {
+      console.error('Error creating organization:', err);
+      setCreateOrgError('Errore di connessione');
+      setIsCreatingOrg(false);
+    }
+  };
+
+  const isOwner = organizations.find(org => org.id === selectedOrgId)?.role === 'owner';
+  const isAdmin = userRole === 'admin' || isOwner; // Owner ha tutti i permessi dell'admin
 
   if (isLoadingOrgs) {
     return (
@@ -199,9 +252,9 @@ export default function BackOfficePage() {
       <header className="border-b border-gray-800 bg-gray-900">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-14">
-            {/* Left: Organization Select */}
-            {organizations.length > 0 && (
-              <div>
+            {/* Left: Organization Select with Actions */}
+            <div className="flex items-center gap-2">
+              {organizations.length > 0 && (
                 <select
                   value={selectedOrgId}
                   onChange={(e) => setSelectedOrgId(e.target.value)}
@@ -213,8 +266,28 @@ export default function BackOfficePage() {
                     </option>
                   ))}
                 </select>
-              </div>
-            )}
+              )}
+
+              {/* Organization Settings Button - Solo per owner */}
+              {isOwner && selectedOrgId && (
+                <button
+                  onClick={() => router.push(`/back/${selectedOrgId}/edit`)}
+                  className="p-1.5 bg-gray-800 border border-gray-700 text-white rounded-lg hover:bg-gray-700 transition-colors"
+                  title="Impostazioni organizzazione"
+                >
+                  <Settings size={16} />
+                </button>
+              )}
+
+              {/* New Organization Button - Per tutti */}
+              <button
+                onClick={handleCreateOrganization}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-800 border border-gray-700 text-white text-sm rounded-lg hover:bg-gray-700 transition-colors"
+                title="Nuova organizzazione"
+              >
+                <span>+ Organizzazione</span>
+              </button>
+            </div>
 
             {/* Right: Actions */}
             <div className="flex items-center gap-2">
@@ -274,7 +347,7 @@ export default function BackOfficePage() {
                   onClick={handleCreateAgent}
                 >
                   <Bot size={16} />
-                  <span>Add Agent</span>
+                  <span>Aggiungi Agent</span>
                 </button>
               )}
             </div>
@@ -303,31 +376,43 @@ export default function BackOfficePage() {
                           {(agent.name || 'A')[0].toUpperCase()}
                         </span>
                       </div>
-                      {isAdmin && (
-                        <div className="flex items-center gap-1">
-                          <button
-                            onClick={() => router.push(`/agent/${agent.id}/board`)}
-                            className="p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors"
-                            title="Dashboard agent"
-                          >
-                            <BarChart3 size={18} />
-                          </button>
-                          <button
-                            onClick={() => handleDuplicateAgent(agent)}
-                            className="p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors"
-                            title="Duplica agent"
-                          >
-                            <Copy size={18} />
-                          </button>
-                          <button
-                            onClick={() => router.push(`/agent/${agent.id}/edit`)}
-                            className="p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors"
-                            title="Modifica agent"
-                          >
-                            <Settings size={18} />
-                          </button>
-                        </div>
-                      )}
+                      <div className="flex items-center gap-1">
+                        {/* Le mie query - per tutti gli utenti */}
+                        <button
+                          onClick={() => router.push(`/agent/${agent.id}/my-queries`)}
+                          className="p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors"
+                          title="Le mie query"
+                        >
+                          <Database size={18} />
+                        </button>
+                        
+                        {/* Pulsanti admin/owner */}
+                        {isAdmin && (
+                          <>
+                            <button
+                              onClick={() => router.push(`/agent/${agent.id}/board`)}
+                              className="p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors"
+                              title="Dashboard agent"
+                            >
+                              <BarChart3 size={18} />
+                            </button>
+                            <button
+                              onClick={() => handleDuplicateAgent(agent)}
+                              className="p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors"
+                              title="Duplica agent"
+                            >
+                              <Copy size={18} />
+                            </button>
+                            <button
+                              onClick={() => router.push(`/agent/${agent.id}/edit`)}
+                              className="p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors"
+                              title="Modifica agent"
+                            >
+                              <Settings size={18} />
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </div>
                     
                     <h3 className="text-lg font-semibold mb-2">
@@ -454,6 +539,97 @@ export default function BackOfficePage() {
                       <Bot size={20} />
                       Crea Agent
                     </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create Organization Modal */}
+      {showCreateOrgModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-gray-900 rounded-lg border border-gray-800 p-8 max-w-md w-full relative">
+            {/* Close Button */}
+            <button
+              onClick={() => {
+                setShowCreateOrgModal(false);
+                setNewOrgName('');
+                setCreateOrgError('');
+              }}
+              className="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors"
+              disabled={isCreatingOrg}
+            >
+              <X size={20} />
+            </button>
+
+            {/* Modal Content */}
+            <div className="mb-6">
+              <h2 className="text-2xl font-bold mb-2 text-center">Nuova Organizzazione</h2>
+              <p className="text-gray-400 text-sm text-center">
+                Crea una nuova organizzazione
+              </p>
+            </div>
+
+            {/* Form */}
+            <div className="space-y-4">
+              {/* Error */}
+              {createOrgError && (
+                <div className="bg-red-500/10 border border-red-500/50 rounded-lg p-3 flex items-start gap-2">
+                  <AlertCircle className="text-red-500 flex-shrink-0 mt-0.5" size={16} />
+                  <p className="text-red-500 text-sm">{createOrgError}</p>
+                </div>
+              )}
+
+              {/* Organization Name */}
+              <div>
+                <label htmlFor="orgName" className="block text-sm font-medium text-gray-300 mb-2">
+                  Nome Organizzazione
+                </label>
+                <input
+                  id="orgName"
+                  type="text"
+                  value={newOrgName}
+                  onChange={(e) => setNewOrgName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      handleConfirmCreateOrganization();
+                    }
+                  }}
+                  required
+                  autoFocus
+                  className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-white/20 text-white placeholder-gray-500"
+                  placeholder="es: La Mia Azienda"
+                  disabled={isCreatingOrg}
+                />
+              </div>
+
+              {/* Buttons */}
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    setShowCreateOrgModal(false);
+                    setNewOrgName('');
+                    setCreateOrgError('');
+                  }}
+                  disabled={isCreatingOrg}
+                  className="flex-1 px-6 py-3 bg-gray-800 border border-gray-700 text-white font-semibold rounded-lg hover:bg-gray-700 transition-colors disabled:opacity-50"
+                >
+                  Annulla
+                </button>
+                <button
+                  onClick={handleConfirmCreateOrganization}
+                  disabled={isCreatingOrg || !newOrgName.trim()}
+                  className="flex-1 px-6 py-3 bg-white text-black font-semibold rounded-lg hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {isCreatingOrg ? (
+                    <>
+                      <Loader2 className="animate-spin" size={20} />
+                      Creazione...
+                    </>
+                  ) : (
+                    'Crea Organizzazione'
                   )}
                 </button>
               </div>

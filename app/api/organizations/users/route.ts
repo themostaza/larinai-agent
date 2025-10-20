@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
       .eq('organization_id', organizationId)
       .single();
 
-    if (userOrgError || !userOrg || userOrg.role !== 'admin') {
+    if (userOrgError || !userOrg || (userOrg.role !== 'admin' && userOrg.role !== 'owner')) {
       return NextResponse.json(
         { success: false, error: 'Non hai permessi di admin per questa organizzazione' },
         { status: 403 }
@@ -185,7 +185,7 @@ export async function POST(request: NextRequest) {
       .eq('organization_id', organizationId)
       .single();
 
-    if (userOrgError || !userOrg || userOrg.role !== 'admin') {
+    if (userOrgError || !userOrg || (userOrg.role !== 'admin' && userOrg.role !== 'owner')) {
       return NextResponse.json(
         { success: false, error: 'Non hai permessi di admin per questa organizzazione' },
         { status: 403 }
@@ -318,7 +318,7 @@ export async function DELETE(request: NextRequest) {
       .eq('organization_id', organizationId)
       .single();
 
-    if (userOrgError || !userOrg || userOrg.role !== 'admin') {
+    if (userOrgError || !userOrg || (userOrg.role !== 'admin' && userOrg.role !== 'owner')) {
       return NextResponse.json(
         { success: false, error: 'Non hai permessi di admin per questa organizzazione' },
         { status: 403 }
@@ -404,7 +404,7 @@ export async function PUT(request: NextRequest) {
       .eq('organization_id', organizationId)
       .single();
 
-    if (userOrgError || !userOrg || userOrg.role !== 'admin') {
+    if (userOrgError || !userOrg || (userOrg.role !== 'admin' && userOrg.role !== 'owner')) {
       return NextResponse.json(
         { success: false, error: 'Non hai permessi di admin per questa organizzazione' },
         { status: 403 }

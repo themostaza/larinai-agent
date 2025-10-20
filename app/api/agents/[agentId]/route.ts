@@ -123,7 +123,7 @@ export async function PUT(
       // TODO: Implementare check del proprietario
       // Per ora permettiamo la modifica
     } else {
-      // Verifica che l'utente sia admin dell'organizzazione
+      // Verifica che l'utente sia admin o owner dell'organizzazione
       const { data: userOrg } = await supabase
         .from('link_organization_user')
         .select('role')
@@ -131,7 +131,7 @@ export async function PUT(
         .eq('organization_id', agent.organization_id)
         .single();
 
-      if (!userOrg || userOrg.role !== 'admin') {
+      if (!userOrg || (userOrg.role !== 'admin' && userOrg.role !== 'owner')) {
         return NextResponse.json(
           { success: false, error: 'Non hai permessi per modificare questo agent' },
           { status: 403 }
@@ -212,7 +212,7 @@ export async function DELETE(
       // TODO: Implementare check del proprietario
       // Per ora permettiamo l'eliminazione
     } else {
-      // Verifica che l'utente sia admin dell'organizzazione
+      // Verifica che l'utente sia admin o owner dell'organizzazione
       const { data: userOrg } = await supabase
         .from('link_organization_user')
         .select('role')
@@ -220,7 +220,7 @@ export async function DELETE(
         .eq('organization_id', agent.organization_id)
         .single();
 
-      if (!userOrg || userOrg.role !== 'admin') {
+      if (!userOrg || (userOrg.role !== 'admin' && userOrg.role !== 'owner')) {
         return NextResponse.json(
           { success: false, error: 'Non hai permessi per eliminare questo agent' },
           { status: 403 }

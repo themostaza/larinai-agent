@@ -49,7 +49,7 @@ export async function POST(
       );
     }
 
-    // Verifica che l'utente sia admin dell'organizzazione
+    // Verifica che l'utente sia admin o owner dell'organizzazione
     const { data: userOrg } = await supabase
       .from('link_organization_user')
       .select('role')
@@ -57,7 +57,7 @@ export async function POST(
       .eq('user_id', user.id)
       .single();
 
-    if (!userOrg || userOrg.role !== 'admin') {
+    if (!userOrg || (userOrg.role !== 'admin' && userOrg.role !== 'owner')) {
       return NextResponse.json(
         { success: false, error: 'Non hai permessi per duplicare questo agent' },
         { status: 403 }

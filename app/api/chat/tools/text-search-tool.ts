@@ -48,9 +48,9 @@ QUANDO USARLO:
     description,
     inputSchema: z.object({
       searchQuery: z.string().describe('Le parole chiave o la frase da cercare nel documento. Usa termini specifici e rilevanti alla domanda dell\'utente.'),
-      contextLines: z.number().optional().describe('Quante righe di contesto includere prima e dopo ogni match (default: 3). Usa valori più alti per contesto più ampio.')
+      contextLines: z.number().optional().describe('Quante righe di contesto includere prima e dopo ogni match (default: 15). Usa valori più alti per contesto più ampio.')
     }),
-    execute: async ({ searchQuery, contextLines = 3 }) => {
+    execute: async ({ searchQuery, contextLines = 15 }) => {
       try {
         console.log(`🔍 [TEXT-SEARCH-TOOL] Ricerca di: "${searchQuery}" in "${documentName}"`);
 

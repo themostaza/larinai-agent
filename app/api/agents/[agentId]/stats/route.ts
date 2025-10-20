@@ -48,9 +48,9 @@ export async function GET(
       .eq('organization_id', agent.organization_id)
       .single();
 
-    if (!userOrg || userOrg.role !== 'admin') {
+    if (!userOrg || (userOrg.role !== 'admin' && userOrg.role !== 'owner')) {
       return NextResponse.json(
-        { success: false, error: 'Accesso negato - solo admin' },
+        { success: false, error: 'Accesso negato - solo admin o owner' },
         { status: 403 }
       );
     }

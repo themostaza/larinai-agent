@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Verifica che l'utente sia admin dell'organizzazione
+    // Verifica che l'utente sia admin o owner dell'organizzazione
     const { data: userOrg, error: orgError } = await supabase
       .from('link_organization_user')
       .select('role')
@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
       .eq('organization_id', organizationId)
       .single();
 
-    if (orgError || !userOrg || userOrg.role !== 'admin') {
+    if (orgError || !userOrg || (userOrg.role !== 'admin' && userOrg.role !== 'owner')) {
       return NextResponse.json(
         { success: false, error: 'Non hai permessi per creare agent in questa organizzazione' },
         { status: 403 }
