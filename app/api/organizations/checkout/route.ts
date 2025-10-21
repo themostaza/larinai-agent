@@ -115,6 +115,10 @@ export async function POST(req: NextRequest) {
       success_url: `${appUrl}/back?checkout=success`,
       cancel_url: `${appUrl}/back?checkout=cancelled`,
       client_reference_id: user.id,
+      customer_email: user.email || undefined, // Precompila l'email nel checkout
+      tax_id_collection: {
+        enabled: true, // Abilita raccolta Codice Fiscale / Partita IVA
+      },
       metadata: {
         user_id: user.id,
         user_email: user.email || '',

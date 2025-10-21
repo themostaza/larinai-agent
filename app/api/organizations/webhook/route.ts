@@ -40,6 +40,7 @@ export async function POST(req: NextRequest) {
 
       // Estrai i dati dai metadata
       const userId = session.metadata?.user_id;
+      const userEmail = session.metadata?.user_email;
       const organizationName = session.metadata?.organization_name;
       const planType = session.metadata?.plan_type;
 
@@ -84,6 +85,11 @@ export async function POST(req: NextRequest) {
 
       if (linkError) {
         console.error('Error linking user to organization:', linkError);
+        console.error('Link details:', {
+          organization_id: organization.id,
+          user_id: userId,
+          role: 'owner',
+        });
         // Rollback: elimina l'organizzazione
         await supabase.from('organization').delete().eq('id', organization.id);
         return NextResponse.json(
@@ -92,11 +98,38 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      console.log('User linked to organization as owner');
+      console.log('User linked to organization as owner:', {
+        organization_id: organization.id,
+        user_id: userId,
+      });
 
-      // 3. Salva i payment settings
+      // 3. Recupera i dati fiscali dal customer Stripe
+      let taxData = null;
+      const customerId = session.customer as string;
+      
+      if (customerId) {
+        try {
+          const customer = await stripe.customers.retrieve(customerId);
+          if ('tax_ids' in customer) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const customerAny = customer as any;
+            if (customerAny.tax_ids?.data?.length > 0) {
+              taxData = customerAny.tax_ids.data.map((tax: { type: string; value: string; country?: string }) => ({
+                type: tax.type,
+                value: tax.value,
+                country: tax.country,
+              }));
+              console.log('Tax IDs retrieved:', taxData);
+            }
+          }
+        } catch (error) {
+          console.error('Error retrieving customer tax data:', error);
+        }
+      }
+
+      // 4. Salva i payment settings
       const paymentMetadata = {
-        stripe_customer_id: session.customer as string,
+        stripe_customer_id: customerId,
         stripe_subscription_id: session.subscription as string,
         stripe_session_id: session.id,
         plan_type: planType,
@@ -104,6 +137,8 @@ export async function POST(req: NextRequest) {
         currency: session.currency,
         payment_status: session.payment_status,
         subscription_status: 'active',
+        tax_data: taxData, // Dati fiscali (Codice Fiscale / Partita IVA)
+        customer_email: session.customer_details?.email || userEmail,
         created_at: new Date().toISOString(),
       };
 
@@ -125,7 +160,7 @@ export async function POST(req: NextRequest) {
       } else {
         console.log('Payment settings saved:', paymentSettings.id);
 
-        // 4. Salva il primo pagamento nella tabella payments
+        // 5. Salva il primo pagamento nella tabella payments
         const firstPaymentMetadata = {
           type: 'initial_subscription',
           stripe_session_id: session.id,

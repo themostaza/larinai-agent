@@ -6,8 +6,17 @@ Il sistema di pagamenti è configurato per gestire:
 1. **Pagamento iniziale** al checkout (creazione organizzazione)
 2. **Pagamenti ricorrenti** mensili (subscription)
 3. **Pagamenti falliti** (disattivazione organizzazione)
+4. **Raccolta dati fiscali** (Codice Fiscale / Partita IVA)
+5. **Email precompilata** nel checkout
 
 Tutti i pagamenti vengono salvati nella tabella `payments` con riferimento a `payments_settings`.
+
+### ✨ Funzionalità del Checkout
+
+- ✅ **Email precompilata** - L'email dell'utente viene automaticamente inserita
+- ✅ **Raccolta Tax ID** - Campo per Codice Fiscale o Partita IVA (obbligatorio per fatturazione)
+- ✅ **Codici promozionali** - Supporto per coupon e sconti Stripe
+- ✅ **Link automatico utente-organizzazione** - L'utente diventa automaticamente owner
 
 ---
 
@@ -176,6 +185,14 @@ stripe listen --forward-to localhost:3000/api/organizations/webhook
     currency: "eur",
     payment_status: "paid",
     subscription_status: "active",
+    tax_data: [                           // ← NUOVO: Dati fiscali
+      {
+        type: "eu_vat",                   // Tipo: it_cf (CF), eu_vat (P.IVA), etc.
+        value: "IT12345678901",           // Codice Fiscale o Partita IVA
+        country: "IT"
+      }
+    ],
+    customer_email: "user@example.com",   // ← NUOVO: Email del cliente
     created_at: "2025-..."
   }
 }
@@ -253,15 +270,22 @@ stripe listen --forward-to localhost:3000/api/organizations/webhook
 
 ### 1. **Checkout Iniziale**
 ```
-Utente → Inserisce nome org → Checkout API → Stripe Checkout → Pagamento
-                                                                     ↓
+Utente → Inserisce nome org → Checkout API → Stripe Checkout
+                                                   ↓
+                                    [Email precompilata]
+                                    [Campo Tax ID mostrato]
+                                                   ↓
+                                             Pagamento
+                                                   ↓
 Webhook ← checkout.session.completed ← Stripe
    ↓
 Crea organizzazione
    ↓
-Aggiunge utente come owner
+Aggiunge utente come owner (link_organization_user)
    ↓
-Salva payments_settings (isactive: true)
+Recupera dati fiscali dal customer Stripe
+   ↓
+Salva payments_settings (isactive: true) con tax_data
    ↓
 Salva primo pagamento in payments
 ```
@@ -344,6 +368,19 @@ stripe trigger customer.subscription.deleted
 3. **Retry**: Stripe ritenta automaticamente i webhook falliti
 4. **Idempotenza**: Il webhook è progettato per essere idempotente
 5. **Security**: La firma del webhook viene sempre verificata
+6. **Tax ID**: I dati fiscali sono essenziali per la fatturazione - vengono salvati automaticamente
+7. **Link Organization**: L'utente viene collegato come "owner" nella tabella `link_organization_user`
+
+### 📝 Dati Fiscali (Tax ID)
+
+Stripe supporta diversi tipi di Tax ID per l'Italia:
+
+- **`it_cf`** - Codice Fiscale (per privati)
+- **`eu_vat`** - Partita IVA (per aziende)
+- **`it_sdi`** - Codice SDI (Sistema di Interscambio)
+
+Nel checkout, l'utente può scegliere il tipo appropriato e inserire il valore.
+I dati vengono salvati in `payments_settings.metadata.tax_data[]`.
 
 ---
 
