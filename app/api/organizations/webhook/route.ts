@@ -222,6 +222,7 @@ export async function POST(req: NextRequest) {
       const subscription = event.data.object as Stripe.Subscription;
 
       console.log('Subscription updated:', subscription.id);
+      console.log('Cancel at period end:', subscription.cancel_at_period_end);
 
       // Aggiorna lo stato della subscription nei payment_settings
       const supabase = await createClient();
@@ -234,11 +235,23 @@ export async function POST(req: NextRequest) {
         .single();
 
       if (existingRecord && existingRecord.metadata) {
-        const updatedMetadata = {
+        const baseMetadata = {
           ...(existingRecord.metadata as Record<string, unknown>),
           subscription_status: subscription.status,
+          cancel_at_period_end: subscription.cancel_at_period_end,
           updated_at: new Date().toISOString(),
         };
+
+        // Aggiungi cancel_at solo se la subscription è programmata per la cancellazione
+        const updatedMetadata = subscription.cancel_at_period_end && subscription.cancel_at
+          ? {
+              ...baseMetadata,
+              cancel_at: new Date(subscription.cancel_at * 1000).toISOString(),
+            }
+          : {
+              ...baseMetadata,
+              cancel_at: null,
+            };
 
         const { error: updateError } = await supabase
           .from('payments_settings')
@@ -247,6 +260,8 @@ export async function POST(req: NextRequest) {
 
         if (updateError) {
           console.error('Error updating subscription status:', updateError);
+        } else {
+          console.log('Subscription metadata updated successfully');
         }
       }
 

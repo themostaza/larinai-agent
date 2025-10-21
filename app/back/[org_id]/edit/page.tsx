@@ -13,12 +13,22 @@ interface Organization {
   usersCount: number;
 }
 
+interface PaymentSettings {
+  isactive: boolean;
+  metadata: {
+    cancel_at_period_end?: boolean;
+    cancel_at?: string;
+    [key: string]: unknown;
+  };
+}
+
 export default function OrganizationSettingsPage() {
   const router = useRouter();
   const params = useParams();
   const orgId = params.org_id as string;
 
   const [organization, setOrganization] = useState<Organization | null>(null);
+  const [paymentSettings, setPaymentSettings] = useState<PaymentSettings | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -41,22 +51,32 @@ export default function OrganizationSettingsPage() {
   const fetchOrganization = async () => {
     try {
       setIsLoading(true);
-      const response = await fetch(`/api/organizations/${orgId}`);
-      const data = await response.json();
+      
+      // Fetch organization data
+      const orgResponse = await fetch(`/api/organizations/${orgId}`);
+      const orgData = await orgResponse.json();
 
-      if (!data.success) {
-        if (response.status === 403) {
+      if (!orgData.success) {
+        if (orgResponse.status === 403) {
           setError('Non hai i permessi per accedere a questa organizzazione');
-        } else if (response.status === 404) {
+        } else if (orgResponse.status === 404) {
           setError('Organizzazione non trovata');
         } else {
-          setError(data.error || 'Errore nel caricamento dell\'organizzazione');
+          setError(orgData.error || 'Errore nel caricamento dell\'organizzazione');
         }
         return;
       }
 
-      setOrganization(data.organization);
-      setNewName(data.organization.name || '');
+      setOrganization(orgData.organization);
+      setNewName(orgData.organization.name || '');
+
+      // Fetch payment settings
+      const paymentsResponse = await fetch(`/api/organizations/${orgId}/payments`);
+      const paymentsData = await paymentsResponse.json();
+      
+      if (paymentsData.success && paymentsData.paymentSettings) {
+        setPaymentSettings(paymentsData.paymentSettings);
+      }
     } catch (err) {
       console.error('Error fetching organization:', err);
       setError('Errore di connessione');
@@ -216,9 +236,6 @@ export default function OrganizationSettingsPage() {
         </div>
 
         <div className="space-y-4">
-          {/* Payments Dashboard */}
-          <PaymentsDashboard organizationId={orgId} />
-
           {/* Change Name Section */}
           <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
             <h2 className="text-lg font-semibold mb-1">Nome Organizzazione</h2>
@@ -282,6 +299,9 @@ export default function OrganizationSettingsPage() {
             </div>
           </div>
 
+          {/* Payments Dashboard */}
+          <PaymentsDashboard organizationId={orgId} />
+
           {/* Transfer Ownership Section - Only UI */}
           <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
             <h2 className="text-lg font-semibold mb-1">Trasferimento Proprietà</h2>
@@ -306,9 +326,27 @@ export default function OrganizationSettingsPage() {
               Elimina definitivamente questa organizzazione. Questa azione non può essere annullata.
             </p>
 
+            {paymentSettings && paymentSettings.isactive && (
+              <div className="bg-orange-500/10 border border-orange-500/50 rounded-lg p-3 mb-3 flex items-start gap-2">
+                <AlertCircle className="text-orange-500 flex-shrink-0 mt-0.5" size={16} />
+                <div>
+                  <p className="text-orange-500 text-xs font-medium mb-1">
+                    Abbonamento Attivo
+                  </p>
+                  <p className="text-orange-400 text-xs">
+                    {paymentSettings.metadata?.cancel_at_period_end 
+                      ? `Non puoi eliminare l'organizzazione con un abbonamento attivo. La tua sottoscrizione terminerà il ${new Date(paymentSettings.metadata.cancel_at as string).toLocaleDateString('it-IT', { day: '2-digit', month: 'long', year: 'numeric' })}. Potrai eliminare l'organizzazione dopo quella data.`
+                      : 'Non puoi eliminare l\'organizzazione con un abbonamento attivo. Cancella prima l\'abbonamento tramite "Gestisci Abbonamento".'
+                    }
+                  </p>
+                </div>
+              </div>
+            )}
+
             <button
               onClick={() => setShowDeleteModal(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500/10 border border-red-500/50 text-red-500 text-sm font-medium rounded-lg hover:bg-red-500/20 transition-colors"
+              disabled={paymentSettings?.isactive === true}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500/10 border border-red-500/50 text-red-500 text-sm font-medium rounded-lg hover:bg-red-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-red-500/10"
             >
               <Trash2 size={16} />
               Elimina Organizzazione

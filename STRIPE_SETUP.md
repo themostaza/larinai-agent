@@ -384,12 +384,110 @@ I dati vengono salvati in `payments_settings.metadata.tax_data[]`.
 
 ---
 
+## 🎨 Configurazione Customer Portal
+
+Il sistema utilizza il **Stripe Customer Portal** per consentire agli utenti di gestire i propri abbonamenti in modo autonomo.
+
+### Funzionalità del Customer Portal
+
+Gli utenti possono:
+- ✅ Cancellare l'abbonamento (con cancellazione a fine periodo)
+- ✅ Riattivare l'abbonamento se cancellato
+- ✅ Aggiornare il metodo di pagamento
+- ✅ Visualizzare tutte le fatture
+- ✅ Scaricare le ricevute
+
+### Configurazione in Stripe Dashboard
+
+1. **Vai su**: [https://dashboard.stripe.com/test/settings/billing/portal](https://dashboard.stripe.com/test/settings/billing/portal)
+
+2. **Attiva il Portal**: Clicca su "Activate portal"
+
+3. **Configura le opzioni**:
+
+   **Customer information:**
+   - ✅ Email address (consigliato: Read only)
+   
+   **Subscriptions:**
+   - ✅ Cancel subscriptions (consigliato: At period end only)
+   - ✅ Update subscriptions (opzionale)
+   
+   **Payment methods:**
+   - ✅ Update payment methods
+   
+   **Invoices:**
+   - ✅ View invoices
+
+4. **Branding** (opzionale):
+   - Aggiungi il logo della tua azienda
+   - Personalizza i colori
+   - Aggiungi link ai termini di servizio e privacy policy
+
+### Come Funziona
+
+1. **Utente clicca sul badge "Attivo"** nella pagina di gestione organizzazione
+2. **Il sistema chiama** `/api/organizations/{orgId}/payments/portal`
+3. **Viene creata una sessione** del Customer Portal con Stripe
+4. **L'utente viene reindirizzato** al portal gestito da Stripe
+5. **Stripe invia webhook** quando l'utente effettua modifiche
+6. **Il DB locale si aggiorna** automaticamente tramite i webhook
+
+### Eventi Webhook Gestiti
+
+Quando l'utente modifica l'abbonamento nel portal, ricevi questi webhook:
+
+- **`customer.subscription.updated`** → Quando l'utente cancella (cancel_at_period_end: true) o riattiva
+- **`customer.subscription.deleted`** → Quando la subscription termina definitivamente
+- **`customer.updated`** → Quando cambiano i metodi di pagamento
+- **`invoice.paid`** → Quando l'utente paga una fattura in sospeso
+
+### Stato nel Database
+
+Il sistema mantiene tutto sincronizzato nel tuo DB:
+
+**Durante la cancellazione programmata:**
+```json
+{
+  "isactive": true,
+  "metadata": {
+    "subscription_status": "active",
+    "cancel_at_period_end": true,
+    "cancel_at": "2025-11-21T00:00:00Z"
+  }
+}
+```
+
+**Dopo la cancellazione definitiva:**
+```json
+{
+  "isactive": false,
+  "metadata": {
+    "subscription_status": "cancelled",
+    "cancelled_at": "2025-11-21T10:30:00Z"
+  }
+}
+```
+
+**Dopo la riattivazione:**
+```json
+{
+  "isactive": true,
+  "metadata": {
+    "subscription_status": "active",
+    "cancel_at_period_end": false
+  }
+}
+```
+
+---
+
 ## 🚀 Deployment in Produzione
 
 1. **Cambia le chiavi** da test (`sk_test_`) a live (`sk_live_`)
 2. **Crea un nuovo webhook** nella dashboard live di Stripe
-3. **Aggiorna** `NEXT_PUBLIC_APP_URL` con il dominio di produzione
-4. **Testa** con una carta reale o una carta di test in modalità live
+3. **Configura il Customer Portal** in modalità live
+4. **Aggiorna** `NEXT_PUBLIC_APP_URL` con il dominio di produzione
+5. **Testa** con una carta reale o una carta di test in modalità live
 
 ---
 
@@ -400,4 +498,5 @@ Se hai problemi:
 2. Verifica che il webhook secret sia corretto
 3. Controlla che l'endpoint sia raggiungibile pubblicamente
 4. Verifica i log del server Next.js
+5. Assicurati che il Customer Portal sia attivo in Stripe Dashboard
 

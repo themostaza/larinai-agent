@@ -206,6 +206,46 @@ export async function DELETE(
       );
     }
 
+    // Verifica se c'è una sottoscrizione attiva
+    const { data: paymentSettings } = await supabase
+      .from('payments_settings')
+      .select('isactive, metadata')
+      .eq('organization_id', orgId)
+      .maybeSingle();
+
+    if (paymentSettings && paymentSettings.isactive) {
+      const metadata = paymentSettings.metadata as { cancel_at_period_end?: boolean; cancel_at?: string } | null;
+      const isCancelScheduled = metadata?.cancel_at_period_end === true;
+      const cancelAt = metadata?.cancel_at;
+
+      if (isCancelScheduled && cancelAt) {
+        // Sottoscrizione programmata per cancellazione
+        const cancelDate = new Date(cancelAt).toLocaleDateString('it-IT', {
+          day: '2-digit',
+          month: 'long',
+          year: 'numeric',
+        });
+        return NextResponse.json(
+          { 
+            success: false, 
+            error: `Non puoi eliminare l'organizzazione con un abbonamento attivo. La tua sottoscrizione è programmata per cancellarsi il ${cancelDate}. Attendi quella data o gestisci l'abbonamento per cancellarlo immediatamente.`,
+            code: 'ACTIVE_SUBSCRIPTION'
+          },
+          { status: 400 }
+        );
+      } else {
+        // Sottoscrizione attiva
+        return NextResponse.json(
+          { 
+            success: false, 
+            error: 'Non puoi eliminare l\'organizzazione con un abbonamento attivo. Cancella prima l\'abbonamento tramite "Gestisci Abbonamento".',
+            code: 'ACTIVE_SUBSCRIPTION'
+          },
+          { status: 400 }
+        );
+      }
+    }
+
     // Elimina l'organizzazione (il database gestirà le foreign keys)
     const { error: deleteError } = await supabase
       .from('organization')

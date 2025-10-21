@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { CreditCard, CheckCircle, XCircle, AlertCircle, Calendar, Euro, FileText, Loader2, Receipt, ExternalLink } from 'lucide-react';
+import { CreditCard, CheckCircle, XCircle, AlertCircle, Calendar, FileText, Loader2, Settings, Mail } from 'lucide-react';
 
 interface TaxData {
   type: string;
@@ -24,33 +24,11 @@ interface PaymentSettings {
     currency?: string;
     payment_status?: string;
     subscription_status?: string;
+    cancel_at_period_end?: boolean;
+    cancel_at?: string;
     tax_data?: TaxData[];
     customer_email?: string;
     created_at?: string;
-    [key: string]: unknown;
-  };
-}
-
-interface Payment {
-  id: string;
-  pay_settings_id: string;
-  created_at: string;
-  metadata: {
-    type?: string;
-    stripe_invoice_id?: string;
-    stripe_session_id?: string;
-    invoice_url?: string;
-    amount_paid?: number;
-    amount_total?: number;
-    amount_due?: number;
-    currency?: string;
-    status?: string;
-    payment_status?: string;
-    period_start?: string;
-    period_end?: string;
-    billing_reason?: string;
-    attempt_count?: number;
-    next_payment_attempt?: string;
     [key: string]: unknown;
   };
 }
@@ -61,9 +39,9 @@ interface PaymentsDashboardProps {
 
 export default function PaymentsDashboard({ organizationId }: PaymentsDashboardProps) {
   const [paymentSettings, setPaymentSettings] = useState<PaymentSettings | null>(null);
-  const [payments, setPayments] = useState<Payment[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  const [isOpeningPortal, setIsOpeningPortal] = useState(false);
 
   useEffect(() => {
     fetchPaymentsData();
@@ -81,7 +59,6 @@ export default function PaymentsDashboard({ organizationId }: PaymentsDashboardP
       }
 
       setPaymentSettings(data.paymentSettings);
-      setPayments(data.payments || []);
     } catch (err) {
       console.error('Error fetching payments:', err);
       setError('Errore di connessione');
@@ -90,29 +67,12 @@ export default function PaymentsDashboard({ organizationId }: PaymentsDashboardP
     }
   };
 
-  const formatAmount = (amount?: number, currency?: string) => {
-    if (!amount) return '€0,00';
-    const formatted = (amount / 100).toFixed(2).replace('.', ',');
-    return currency?.toUpperCase() === 'EUR' ? `€${formatted}` : `${formatted} ${currency}`;
-  };
-
   const formatDate = (dateString?: string) => {
     if (!dateString) return '-';
     return new Date(dateString).toLocaleDateString('it-IT', {
       day: '2-digit',
       month: 'short',
       year: 'numeric',
-    });
-  };
-
-  const formatDateTime = (dateString?: string) => {
-    if (!dateString) return '-';
-    return new Date(dateString).toLocaleString('it-IT', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
     });
   };
 
@@ -125,9 +85,29 @@ export default function PaymentsDashboard({ organizationId }: PaymentsDashboardP
     return type ? labels[type] || type : 'Tax ID';
   };
 
-  const handleViewInvoice = (invoiceUrl: string) => {
-    // Apri il link pubblico alla fattura
-    window.open(invoiceUrl, '_blank');
+  const handleOpenPortal = async () => {
+    try {
+      setIsOpeningPortal(true);
+      const response = await fetch(`/api/organizations/${organizationId}/payments/portal`, {
+        method: 'POST',
+      });
+      
+      const data = await response.json();
+      
+      if (!data.success) {
+        setError(data.error || 'Errore nell\'apertura del portale');
+        setIsOpeningPortal(false);
+        return;
+      }
+      
+      // Apri il Customer Portal in una nuova tab
+      window.open(data.url, '_blank');
+      setIsOpeningPortal(false);
+    } catch (err) {
+      console.error('Error opening portal:', err);
+      setError('Errore di connessione');
+      setIsOpeningPortal(false);
+    }
   };
 
   if (isLoading) {
@@ -159,7 +139,7 @@ export default function PaymentsDashboard({ organizationId }: PaymentsDashboardP
       <div className="bg-gray-900 border border-gray-800 rounded-lg p-6">
         <div className="flex flex-col items-center justify-center py-8 text-center">
           <div className="w-16 h-16 bg-gray-800 rounded-full flex items-center justify-center mb-4">
-            <CreditCard size={32} className="text-gray-500" />
+            <AlertCircle size={32} className="text-gray-500" />
           </div>
           <h3 className="text-lg font-semibold mb-2">Nessun Abbonamento Attivo</h3>
           <p className="text-gray-400 text-sm max-w-md">
@@ -172,34 +152,79 @@ export default function PaymentsDashboard({ organizationId }: PaymentsDashboardP
 
   const metadata = paymentSettings.metadata;
   const taxData = metadata.tax_data;
+  const isCancelScheduled = metadata.cancel_at_period_end === true;
+  const cancelAt = metadata.cancel_at as string | undefined;
 
   return (
     <div className="space-y-4">
+      {/* Warning se cancellazione programmata */}
+      {isCancelScheduled && cancelAt && (
+        <div className="bg-orange-500/10 border border-orange-500/50 rounded-lg p-3">
+          <div className="flex items-start gap-2">
+            <AlertCircle className="text-orange-500 flex-shrink-0 mt-0.5" size={18} />
+            <div>
+              <p className="text-orange-500 text-sm font-medium">
+                Cancellazione Programmata
+              </p>
+              <p className="text-orange-400 text-xs mt-0.5">
+                L&apos;abbonamento si cancellerà automaticamente il {formatDate(cancelAt)}. Puoi riattivarlo in qualsiasi momento prima di quella data.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Subscription Status */}
       <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
         <div className="flex items-start justify-between mb-3">
           <div>
-            <h2 className="text-lg font-semibold mb-1">Stato Abbonamento</h2>
+            <h2 className="text-lg font-semibold mb-1">Sottoscrizione</h2>
             <p className="text-gray-400 text-xs">
               Informazioni sulla tua subscription attiva
             </p>
           </div>
-          <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium ${
-            paymentSettings.isactive 
-              ? 'bg-green-500/10 text-green-400 border border-green-500/50' 
-              : 'bg-red-500/10 text-red-400 border border-red-500/50'
-          }`}>
-            {paymentSettings.isactive ? (
-              <>
-                <CheckCircle size={16} />
-                Attivo
-              </>
-            ) : (
-              <>
-                <XCircle size={16} />
-                Non Attivo
-              </>
-            )}
+          <div className="flex items-center gap-2">
+            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium ${
+              isCancelScheduled
+                ? 'bg-orange-500/10 text-orange-400 border border-orange-500/50'
+                : paymentSettings.isactive 
+                  ? 'bg-green-500/10 text-green-400 border border-green-500/50' 
+                  : 'bg-red-500/10 text-red-400 border border-red-500/50'
+            }`}>
+              {isCancelScheduled ? (
+                <>
+                  <AlertCircle size={16} />
+                  In scadenza
+                </>
+              ) : paymentSettings.isactive ? (
+                <>
+                  <CheckCircle size={16} />
+                  Attivo
+                </>
+              ) : (
+                <>
+                  <XCircle size={16} />
+                  Non Attivo
+                </>
+              )}
+            </div>
+            <button
+              onClick={handleOpenPortal}
+              disabled={isOpeningPortal}
+              className="flex items-center gap-2 px-3 py-1.5 bg-white text-black text-sm font-medium rounded-lg hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed w-fit"
+            >
+              {isOpeningPortal ? (
+                <>
+                  <Loader2 className="animate-spin" size={16} />
+                  Apertura...
+                </>
+              ) : (
+                <>
+                  <Settings size={16} />
+                  Gestisci
+                </>
+              )}
+            </button>
           </div>
         </div>
 
@@ -218,7 +243,7 @@ export default function PaymentsDashboard({ organizationId }: PaymentsDashboardP
           {/* Email */}
           <div className="bg-gray-800 rounded-lg p-3">
             <div className="flex items-center gap-2 mb-1">
-              <Receipt size={16} className="text-gray-400" />
+              <Mail size={16} className="text-gray-400" />
               <span className="text-xs text-gray-400">Email</span>
             </div>
             <p className="text-sm font-medium break-all">
@@ -260,64 +285,6 @@ export default function PaymentsDashboard({ organizationId }: PaymentsDashboardP
                 </div>
               ))}
             </div>
-          </div>
-        )}
-      </div>
-
-      {/* Storico Pagamenti */}
-      <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
-        <h2 className="text-lg font-semibold mb-1">Storico Transazioni</h2>
-        <p className="text-gray-400 text-xs mb-4">
-          {payments.length > 0 
-            ? `${payments.length} ${payments.length === 1 ? 'transazione' : 'transazioni'} registrata${payments.length === 1 ? '' : 'e'}`
-            : 'Nessuna transazione ancora registrata'
-          }
-        </p>
-
-        {payments.length === 0 ? (
-          <div className="text-center py-8 text-gray-500">
-            <Receipt size={32} className="mx-auto mb-2 opacity-50" />
-            <p className="text-sm">Nessuna transazione</p>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {payments.map((payment) => {
-              const meta = payment.metadata;
-              const type = meta.type;
-              const amount = meta.amount_paid || meta.amount_total || meta.amount_due;
-              const hasInvoice = meta.invoice_url && type !== 'failed_payment';
-              const isFailed = type === 'failed_payment';
-
-              return (
-                <div key={payment.id} className="bg-gray-800 rounded-lg p-3 border border-gray-700 hover:border-gray-600 transition-colors">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className={`w-2 h-2 rounded-full ${isFailed ? 'bg-red-400' : 'bg-green-400'}`} />
-                      <div>
-                        <p className="text-sm font-medium">
-                          {formatAmount(amount, meta.currency)}
-                        </p>
-                        <p className="text-xs text-gray-400">
-                          {formatDate(payment.created_at)}
-                        </p>
-                      </div>
-                    </div>
-                    
-                    {hasInvoice && (
-                      <button
-                        onClick={() => handleViewInvoice(meta.invoice_url!)}
-                        className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white/5 hover:bg-white/10 border border-gray-600 hover:border-gray-500 text-gray-300 hover:text-white text-xs font-medium rounded transition-colors"
-                        title="Visualizza fattura"
-                      >
-                        <FileText size={14} />
-                        <span>Fattura</span>
-                        <ExternalLink size={12} />
-                      </button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
           </div>
         )}
       </div>
