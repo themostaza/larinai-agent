@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { ArrowLeft, Save, Loader2, AlertCircle, Trash2, UserCog, X } from 'lucide-react';
+import PaymentsDashboard from '@/app/components/PaymentsDashboard';
 
 interface Organization {
   id: string;
@@ -215,6 +216,9 @@ export default function OrganizationSettingsPage() {
         </div>
 
         <div className="space-y-4">
+          {/* Payments Dashboard */}
+          <PaymentsDashboard organizationId={orgId} />
+
           {/* Change Name Section */}
           <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
             <h2 className="text-lg font-semibold mb-1">Nome Organizzazione</h2>

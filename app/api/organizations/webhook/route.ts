@@ -160,10 +160,21 @@ export async function POST(req: NextRequest) {
       } else {
         console.log('Payment settings saved:', paymentSettings.id);
 
-        // 5. Salva il primo pagamento nella tabella payments
+        // 5. Recupera l'invoice dal session (se disponibile)
+        let invoiceId = null;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const sessionAny = session as any;
+        if (sessionAny.invoice) {
+          invoiceId = typeof sessionAny.invoice === 'string' 
+            ? sessionAny.invoice 
+            : sessionAny.invoice?.id;
+        }
+
+        // 6. Salva il primo pagamento nella tabella payments
         const firstPaymentMetadata = {
           type: 'initial_subscription',
           stripe_session_id: session.id,
+          stripe_invoice_id: invoiceId, // Invoice ID del primo pagamento
           stripe_customer_id: session.customer as string,
           stripe_subscription_id: session.subscription as string,
           amount_total: session.amount_total,
