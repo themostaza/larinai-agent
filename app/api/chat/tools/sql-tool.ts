@@ -79,7 +79,9 @@ parametro 'aiLimit' (opzionale, default 10 se non lo specifichi):
     execute: async ({ query, purpose, aiLimit }) => {
     
     try {
-      const baseUrl = process.env.NEXTAUTH_URL || process.env.VERCEL_URL || 'http://localhost:3000';
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 
+        process.env.NEXTAUTH_URL || 
+        (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000');
       const apiUrl = `${baseUrl}/api/query_sql`;
       
       const response = await fetch(apiUrl, {
