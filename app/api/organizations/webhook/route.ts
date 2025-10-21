@@ -162,12 +162,23 @@ export async function POST(req: NextRequest) {
 
         // 5. Recupera l'invoice dal session (se disponibile)
         let invoiceId = null;
+        let invoiceUrl = null;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const sessionAny = session as any;
         if (sessionAny.invoice) {
           invoiceId = typeof sessionAny.invoice === 'string' 
             ? sessionAny.invoice 
             : sessionAny.invoice?.id;
+          
+          // Recupera l'URL pubblico della fattura
+          if (invoiceId) {
+            try {
+              const invoice = await stripe.invoices.retrieve(invoiceId);
+              invoiceUrl = invoice.hosted_invoice_url;
+            } catch (error) {
+              console.error('Error retrieving invoice URL:', error);
+            }
+          }
         }
 
         // 6. Salva il primo pagamento nella tabella payments
@@ -175,6 +186,7 @@ export async function POST(req: NextRequest) {
           type: 'initial_subscription',
           stripe_session_id: session.id,
           stripe_invoice_id: invoiceId, // Invoice ID del primo pagamento
+          invoice_url: invoiceUrl, // URL pubblico della fattura
           stripe_customer_id: session.customer as string,
           stripe_subscription_id: session.subscription as string,
           amount_total: session.amount_total,
@@ -318,6 +330,7 @@ export async function POST(req: NextRequest) {
         const recurringPaymentMetadata = {
           type: 'recurring_subscription',
           stripe_invoice_id: invoice.id,
+          invoice_url: invoice.hosted_invoice_url, // URL pubblico della fattura
           stripe_subscription_id: subscriptionId,
           stripe_customer_id: customerId,
           stripe_payment_intent: paymentIntentId,

@@ -39,6 +39,7 @@ interface Payment {
     type?: string;
     stripe_invoice_id?: string;
     stripe_session_id?: string;
+    invoice_url?: string;
     amount_paid?: number;
     amount_total?: number;
     amount_due?: number;
@@ -124,15 +125,9 @@ export default function PaymentsDashboard({ organizationId }: PaymentsDashboardP
     return type ? labels[type] || type : 'Tax ID';
   };
 
-  const getInvoiceUrl = (invoiceId: string) => {
-    // Link diretto alla fattura nella Dashboard di Stripe
-    // Funziona sia in test mode che in live mode
-    return `https://dashboard.stripe.com/invoices/${invoiceId}`;
-  };
-
-  const handleViewInvoice = (invoiceId: string) => {
-    // Apri direttamente la fattura in Stripe
-    window.open(getInvoiceUrl(invoiceId), '_blank');
+  const handleViewInvoice = (invoiceUrl: string) => {
+    // Apri il link pubblico alla fattura
+    window.open(invoiceUrl, '_blank');
   };
 
   if (isLoading) {
@@ -290,7 +285,7 @@ export default function PaymentsDashboard({ organizationId }: PaymentsDashboardP
               const meta = payment.metadata;
               const type = meta.type;
               const amount = meta.amount_paid || meta.amount_total || meta.amount_due;
-              const hasInvoice = meta.stripe_invoice_id && type !== 'failed_payment';
+              const hasInvoice = meta.invoice_url && type !== 'failed_payment';
               const isFailed = type === 'failed_payment';
 
               return (
@@ -308,9 +303,9 @@ export default function PaymentsDashboard({ organizationId }: PaymentsDashboardP
                       </div>
                     </div>
                     
-                    {hasInvoice && meta.stripe_invoice_id && (
+                    {hasInvoice && (
                       <button
-                        onClick={() => handleViewInvoice(meta.stripe_invoice_id!)}
+                        onClick={() => handleViewInvoice(meta.invoice_url!)}
                         className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white/5 hover:bg-white/10 border border-gray-600 hover:border-gray-500 text-gray-300 hover:text-white text-xs font-medium rounded transition-colors"
                         title="Visualizza fattura"
                       >
