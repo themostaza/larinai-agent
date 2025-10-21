@@ -44,6 +44,10 @@ export default function BackOfficePage() {
   const [isCreatingOrg, setIsCreatingOrg] = useState(false);
   const [createOrgError, setCreateOrgError] = useState('');
 
+  // Pricing Dialog State
+  const [showPricingDialog, setShowPricingDialog] = useState(false);
+  const [organizationName, setOrganizationName] = useState('');
+
   // Info Dialog State
   const [showInfoDialog, setShowInfoDialog] = useState(false);
 
@@ -190,9 +194,58 @@ export default function BackOfficePage() {
   };
 
   const handleCreateOrganization = () => {
-    setShowCreateOrgModal(true);
-    setNewOrgName('');
+    setShowPricingDialog(true);
+  };
+
+  const handleProceedFromPricing = async () => {
+    if (!organizationName.trim()) {
+      setCreateOrgError('Il nome dell\'organizzazione è obbligatorio');
+      return;
+    }
+
+    if (organizationName.trim().length > 50) {
+      setCreateOrgError('Il nome non può superare i 50 caratteri');
+      return;
+    }
+
+    setIsCreatingOrg(true);
     setCreateOrgError('');
+
+    try {
+      const response = await fetch('/api/organizations/checkout', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          organizationName: organizationName.trim(),
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!data.success) {
+        setCreateOrgError(data.error || 'Errore nella creazione dell\'organizzazione');
+        setIsCreatingOrg(false);
+        return;
+      }
+
+      // Se c'è un checkout URL (Stripe), reindirizza
+      if (data.checkoutUrl) {
+        window.location.href = data.checkoutUrl;
+        return;
+      }
+
+      // Altrimenti, se l'organizzazione è stata creata direttamente (sconto 100%)
+      if (data.organization && data.organization.id) {
+        setShowPricingDialog(false);
+        router.push(`/back/${data.organization.id}/edit`);
+      }
+    } catch (err) {
+      console.error('Error creating organization:', err);
+      setCreateOrgError('Errore di connessione');
+      setIsCreatingOrg(false);
+    }
   };
 
   const handleConfirmCreateOrganization = async () => {
@@ -678,6 +731,249 @@ export default function BackOfficePage() {
                     </>
                   ) : (
                     'Crea'
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Pricing Dialog */}
+      {showPricingDialog && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-gray-900 rounded-lg border border-gray-800 p-8 min-w-[60vw] w-full max-w-5xl max-h-[95vh] overflow-y-auto relative">
+            {/* Close Button */}
+            <button
+              onClick={() => {
+                setShowPricingDialog(false);
+                setOrganizationName('');
+                setCreateOrgError('');
+              }}
+              className="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors"
+              disabled={isCreatingOrg}
+            >
+              <X size={20} />
+            </button>
+
+            {/* Modal Content */}
+            <div className="mb-8">
+              <h2 className="text-2xl font-bold mb-2 text-center">Scegli il tuo piano</h2>
+              <p className="text-gray-400 text-sm text-center">
+                Seleziona il piano più adatto alle tue esigenze
+              </p>
+            </div>
+
+            {/* Organization Name Input */}
+            <div className="mb-6">
+              <label htmlFor="organizationName" className="block text-sm font-medium text-gray-300 mb-2">
+                Nome Organizzazione *
+              </label>
+              <input
+                id="organizationName"
+                type="text"
+                value={organizationName}
+                onChange={(e) => setOrganizationName(e.target.value)}
+                maxLength={50}
+                required
+                className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-white/20 text-white placeholder-gray-500"
+                placeholder="es: La Mia Azienda"
+                disabled={isCreatingOrg}
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                {organizationName.length}/50 caratteri
+              </p>
+            </div>
+
+            {/* Error Message */}
+            {createOrgError && (
+              <div className="mb-6 bg-red-500/10 border border-red-500/50 rounded-lg p-3 flex items-start gap-2">
+                <AlertCircle className="text-red-500 flex-shrink-0 mt-0.5" size={16} />
+                <p className="text-red-500 text-sm">{createOrgError}</p>
+              </div>
+            )}
+
+            {/* Pricing Plans */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Piano Pay As You Go */}
+              <div className="bg-gray-800 border border-gray-700 rounded-lg p-6 relative opacity-60 flex flex-col">
+                {/* Coming Soon Badge */}
+                <div className="absolute top-4 right-4">
+                  <span className="px-3 py-1 bg-yellow-500/20 border border-yellow-500/50 text-yellow-400 text-xs font-semibold rounded-full">
+                    Coming Soon
+                  </span>
+                </div>
+
+                <div className="mb-6">
+                  <div className="flex items-baseline gap-2 mb-2">
+                    <span className="text-3xl font-bold text-white">€15</span>
+                    <span className="text-gray-400 text-base">/mese</span>
+                  </div>
+                  <p className="text-gray-400 text-sm font-medium mb-1">Pay As You Go</p>
+                  <p className="text-gray-500 text-xs">+ costi basati sui consumi</p>
+                </div>
+
+                {/* Features */}
+                <div className="space-y-3 flex-grow">
+                  <div className="flex items-start gap-3">
+                    <div className="flex-shrink-0 w-5 h-5 rounded-full bg-green-500/20 flex items-center justify-center mt-0.5">
+                      <svg className="w-3 h-3 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="text-white text-sm font-medium">Organizzazioni illimitate</p>
+                      <p className="text-gray-400 text-xs">Gestisci più organizzazioni</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-3">
+                    <div className="flex-shrink-0 w-5 h-5 rounded-full bg-green-500/20 flex items-center justify-center mt-0.5">
+                      <svg className="w-3 h-3 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="text-white text-sm font-medium">Chatbot illimitati</p>
+                      <p className="text-gray-400 text-xs">Crea tutti gli agent di cui hai bisogno</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-3">
+                    <div className="flex-shrink-0 w-5 h-5 rounded-full bg-green-500/20 flex items-center justify-center mt-0.5">
+                      <svg className="w-3 h-3 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="text-white text-sm font-medium">Utenti illimitati</p>
+                      <p className="text-gray-400 text-xs">Invita tutti i membri del tuo team</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-3">
+                    <div className="flex-shrink-0 w-5 h-5 rounded-full bg-green-500/20 flex items-center justify-center mt-0.5">
+                      <svg className="w-3 h-3 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="text-white text-sm font-medium">API della piattaforma</p>
+                      <p className="text-gray-400 text-xs">Usa le nostre API key incluse</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-3">
+                    <div className="flex-shrink-0 w-5 h-5 rounded-full bg-green-500/20 flex items-center justify-center mt-0.5">
+                      <svg className="w-3 h-3 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="text-white text-sm font-medium">Gestione completa</p>
+                      <p className="text-gray-400 text-xs">Controllo totale delle organizzazioni</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* CTA Disabled */}
+                <button
+                  disabled
+                  className="w-full px-6 py-2 bg-gray-700 text-gray-400 font-semibold rounded-lg cursor-not-allowed mt-6"
+                >
+                  Prossimamente
+                </button>
+              </div>
+
+              {/* Piano Unlimited */}
+              <div className="bg-gray-800 border-2 border-white/20 rounded-lg p-6 relative flex flex-col">
+
+
+                <div className="mb-6">
+                  <div className="flex items-baseline gap-2 mb-2">
+                    <span className="text-3xl font-bold text-white">€50</span>
+                    <span className="text-gray-400 text-base">/mese</span>
+                  </div>
+                  <p className="text-gray-400 text-sm font-medium mb-1">Org Unlimited</p>
+                  <p className="text-gray-500 text-xs">Prezzo fisso senza sorprese</p>
+                </div>
+
+                {/* Features */}
+                <div className="space-y-3 mb-6 flex-grow">
+                  <div className="flex items-start gap-3">
+                    <div className="flex-shrink-0 w-5 h-5 rounded-full bg-green-500/20 flex items-center justify-center mt-0.5">
+                      <svg className="w-3 h-3 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="text-white text-sm font-medium">1 organizzazione</p>
+                      <p className="text-gray-400 text-xs">Dedicata al tuo team</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-3">
+                    <div className="flex-shrink-0 w-5 h-5 rounded-full bg-green-500/20 flex items-center justify-center mt-0.5">
+                      <svg className="w-3 h-3 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="text-white text-sm font-medium">Chatbot illimitati</p>
+                      <p className="text-gray-400 text-xs">Crea tutti gli agent di cui hai bisogno</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-3">
+                    <div className="flex-shrink-0 w-5 h-5 rounded-full bg-green-500/20 flex items-center justify-center mt-0.5">
+                      <svg className="w-3 h-3 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="text-white text-sm font-medium">Utenti illimitati</p>
+                      <p className="text-gray-400 text-xs">Invita tutti i membri del tuo team</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-3">
+                    <div className="flex-shrink-0 w-5 h-5 rounded-full bg-green-500/20 flex items-center justify-center mt-0.5">
+                      <svg className="w-3 h-3 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="text-white text-sm font-medium">API Key personalizzate</p>
+                      <p className="text-gray-400 text-xs">Usa le tue API key AI o quelle della piattaforma</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-3">
+                    <div className="flex-shrink-0 w-5 h-5 rounded-full bg-green-500/20 flex items-center justify-center mt-0.5">
+                      <svg className="w-3 h-3 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="text-white text-sm font-medium">Gestione completa</p>
+                      <p className="text-gray-400 text-xs">Invita utenti e gestisci permessi</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* CTA Active */}
+                <button
+                  onClick={handleProceedFromPricing}
+                  disabled={isCreatingOrg || !organizationName.trim()}
+                  className="w-full px-6 py-2 bg-white text-black font-semibold rounded-lg hover:bg-gray-100 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isCreatingOrg ? (
+                    <>
+                      <Loader2 className="animate-spin" size={20} />
+                      Elaborazione...
+                    </>
+                  ) : (
+                    'Continua e crea organizzazione'
                   )}
                 </button>
               </div>

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Database, Loader2, ChevronDown } from 'lucide-react';
 
 interface TablePolicy {

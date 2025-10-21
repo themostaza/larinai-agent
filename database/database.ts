@@ -250,6 +250,70 @@ export type Database = {
         }
         Relationships: []
       }
+      payments: {
+        Row: {
+          created_at: string
+          id: string
+          metadata: Json | null
+          pay_settings_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          pay_settings_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          pay_settings_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payments_pay_settings_id_fkey"
+            columns: ["pay_settings_id"]
+            isOneToOne: false
+            referencedRelation: "payments_settings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      payments_settings: {
+        Row: {
+          created_at: string
+          id: string
+          isactive: boolean | null
+          metadata: Json | null
+          organization_id: string | null
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          isactive?: boolean | null
+          metadata?: Json | null
+          organization_id?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          isactive?: boolean | null
+          metadata?: Json | null
+          organization_id?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payments_settings_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organization"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       query_ececutions: {
         Row: {
           created_at: string
