@@ -207,6 +207,15 @@ export default function QueryPage() {
             console.log('✅ [QUERY-PAGE] Setting new chart config:', config);
             setChartsConfig(config);
             
+            // Switch automaticamente alla tab charts per mostrare i nuovi grafici
+            if (activeTab !== 'charts') {
+              console.log('🔄 [QUERY-PAGE] Auto-switching to charts tab');
+              setActiveTab('charts');
+              const url = new URL(window.location.href);
+              url.searchParams.set('tab', 'charts');
+              router.replace(url.pathname + url.search, { scroll: false });
+            }
+            
             // Mostra notifica di successo
             setNotification({
               type: 'success',

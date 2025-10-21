@@ -41,7 +41,7 @@ export default function AgentChatSidebar({ isOpen, onWidthChange, queryContext, 
     onFinish: () => {
       console.log('✅ [CHART-AGENT] Message finished');
       setIsLoading(false);
-      // onChartsUpdated viene chiamato in tempo reale quando il tool viene eseguito (vedi useEffect sopra)
+      // onChartsUpdated viene chiamato IMMEDIATAMENTE quando il tool completa con successo (vedi useEffect sopra)
     }
   });
 
@@ -86,16 +86,28 @@ export default function AgentChatSidebar({ isOpen, onWidthChange, queryContext, 
         if (part.type?.startsWith('tool-') && part.type.includes('create_chart')) {
           // Usa toolCallId come identificatore univoco
           const toolCallId = (part as { toolCallId?: string }).toolCallId;
+          
+          // Verifica che il tool sia COMPLETATO con successo
+          const result = (part as { result?: { success?: boolean } }).result;
+          const output = (part as { output?: { success?: boolean } }).output;
+          const toolResult = result || output;
+          
           if (toolCallId && !processedToolCallsRef.current.has(toolCallId)) {
-            console.log('🔄 [CHART-AGENT] Tool create_chart detected (ID:', toolCallId, '), reloading charts immediately!');
-            processedToolCallsRef.current.add(toolCallId);
-            
-            if (onChartsUpdated) {
-              // Ricarica i grafici immediatamente quando vediamo il tool
-              setTimeout(() => {
+            // Se il tool ha un risultato (completato) E ha success: true
+            if (toolResult && toolResult.success === true) {
+              console.log('✅ [CHART-AGENT] Tool create_chart completed successfully (ID:', toolCallId, '), reloading charts NOW!');
+              processedToolCallsRef.current.add(toolCallId);
+              
+              if (onChartsUpdated) {
+                // Ricarica i grafici IMMEDIATAMENTE - il tool ha già salvato nel DB
                 onChartsUpdated();
-              }, 500); // Piccolo delay per dare tempo al DB
+              }
+            } else if (toolResult) {
+              // Tool completato ma con errore
+              console.warn('⚠️ [CHART-AGENT] Tool create_chart completed with error (ID:', toolCallId, ')');
+              processedToolCallsRef.current.add(toolCallId);
             }
+            // Se non c'è result/output, il tool non è ancora completato - aspettiamo il prossimo update
           }
         }
       });
@@ -186,6 +198,11 @@ Come posso supportarti?`
       }
     });
     setInput('');
+    
+    // Reset altezza textarea dopo invio
+    if (inputRef.current) {
+      inputRef.current.style.height = 'auto';
+    }
   }, [input, isLoading, hasUserSentMessage, baseSendMessage, includeContext, queryContext, selectedModel]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
