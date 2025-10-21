@@ -104,7 +104,9 @@ Il tool salverà automaticamente la configurazione nel database per la query cor
     
     try {
       // Chiamata all'API per salvare la configurazione
-      const baseUrl = process.env.NEXTAUTH_URL || process.env.VERCEL_URL || 'http://localhost:3000';
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 
+        process.env.NEXTAUTH_URL || 
+        (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000');
       const apiUrl = `${baseUrl}/api/query/save`;
       
       console.log(`🎨 [CREATE-CHART-TOOL] Making request to: ${apiUrl}`);

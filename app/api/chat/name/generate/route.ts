@@ -98,7 +98,9 @@ Rispondi SOLO con il titolo, senza virgolette o punteggiatura finale. Deve esser
     console.log(`🤖 [NAME-GEN] ${isRefinement ? 'Refined' : 'Generated'} title: "${cleanTitle}"`);
 
     // 4. Salva il titolo nel database chiamando l'endpoint esistente
-    const baseUrl = process.env.NEXTAUTH_URL || process.env.VERCEL_URL || 'http://localhost:3000';
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 
+      process.env.NEXTAUTH_URL || 
+      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000');
     const updateResponse = await fetch(`${baseUrl}/api/chat/name`, {
       method: 'POST',
       headers: {
