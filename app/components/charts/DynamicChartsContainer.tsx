@@ -1,7 +1,7 @@
 'use client';
 
-import React from 'react';
-import { BrainCircuit, AlertCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { BrainCircuit, AlertCircle, Trash2, Loader2, Maximize2, X } from 'lucide-react';
 import KPICard from './KPICard';
 import ChartRenderer from './ChartRenderer';
 import ChartErrorBoundary from './ChartErrorBoundary';
@@ -38,9 +38,37 @@ interface DynamicChartsContainerProps {
   config: ChartsKPIConfig | null;
   data: Record<string, unknown>[];
   onOpenAgentChat?: () => void;
+  onDeleteKPI?: (kpiId: string) => void;
+  onDeleteChart?: (chartId: string) => void;
+  deletingKPIs?: Set<string>;
+  deletingCharts?: Set<string>;
 }
 
-export default function DynamicChartsContainer({ config, data, onOpenAgentChat }: DynamicChartsContainerProps) {
+export default function DynamicChartsContainer({ config, data, onOpenAgentChat, onDeleteKPI, onDeleteChart, deletingKPIs = new Set(), deletingCharts = new Set() }: DynamicChartsContainerProps) {
+  const [expandedKPI, setExpandedKPI] = useState<KPIConfig | null>(null);
+  const [expandedChart, setExpandedChart] = useState<ChartConfig | null>(null);
+
+  // Chiudi dialog con ESC
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (expandedKPI) setExpandedKPI(null);
+        if (expandedChart) setExpandedChart(null);
+      }
+    };
+
+    if (expandedKPI || expandedChart) {
+      document.addEventListener('keydown', handleEscape);
+      // Previeni scroll della pagina quando dialog aperto
+      document.body.style.overflow = 'hidden';
+    }
+
+    return () => {
+      document.removeEventListener('keydown', handleEscape);
+      document.body.style.overflow = 'unset';
+    };
+  }, [expandedKPI, expandedChart]);
+
   if (!config) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -128,31 +156,163 @@ export default function DynamicChartsContainer({ config, data, onOpenAgentChat }
         {/* KPIs Section */}
         {hasKPIs && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {config.kpis!.map((kpiConfig) => (
-              <ChartErrorBoundary key={kpiConfig.id} chartTitle={kpiConfig.title}>
-                <KPICard
-                  config={kpiConfig}
-                  data={data}
-                />
-              </ChartErrorBoundary>
-            ))}
+            {config.kpis!.map((kpiConfig) => {
+              const isDeleting = deletingKPIs.has(kpiConfig.id);
+              return (
+                <ChartErrorBoundary key={kpiConfig.id} chartTitle={kpiConfig.title}>
+                  <div className={`relative group ${isDeleting ? 'opacity-60' : ''}`}>
+                    <KPICard
+                      config={kpiConfig}
+                      data={data}
+                    />
+                    <div className="absolute top-2 right-2 flex gap-1 z-10">
+                      <button
+                        onClick={() => setExpandedKPI(kpiConfig)}
+                        className="p-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+                        title="Ingrandisci KPI"
+                      >
+                        <Maximize2 size={14} />
+                      </button>
+                      {onDeleteKPI && (
+                        <button
+                          onClick={() => !isDeleting && onDeleteKPI(kpiConfig.id)}
+                          disabled={isDeleting}
+                          className={`p-1.5 bg-red-600 hover:bg-red-700 text-white rounded-md transition-opacity duration-200 ${
+                            isDeleting ? 'opacity-100 cursor-not-allowed' : 'opacity-0 group-hover:opacity-100'
+                          }`}
+                          title={isDeleting ? 'Eliminazione in corso...' : 'Elimina KPI'}
+                        >
+                          {isDeleting ? (
+                            <Loader2 size={14} className="animate-spin" />
+                          ) : (
+                            <Trash2 size={14} />
+                          )}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </ChartErrorBoundary>
+              );
+            })}
           </div>
         )}
 
         {/* Charts Section */}
         {hasCharts && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {config.charts!.map((chartConfig) => (
-              <ChartErrorBoundary key={chartConfig.id} chartTitle={chartConfig.title}>
-                <ChartRenderer
-                  config={chartConfig}
-                  data={data}
-                />
-              </ChartErrorBoundary>
-            ))}
+            {config.charts!.map((chartConfig) => {
+              const isDeleting = deletingCharts.has(chartConfig.id);
+              return (
+                <ChartErrorBoundary key={chartConfig.id} chartTitle={chartConfig.title}>
+                  <div className={`relative group ${isDeleting ? 'opacity-60' : ''}`}>
+                    <ChartRenderer
+                      config={chartConfig}
+                      data={data}
+                    />
+                    <div className="absolute top-2 right-2 flex gap-1 z-10">
+                      <button
+                        onClick={() => setExpandedChart(chartConfig)}
+                        className="p-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+                        title="Ingrandisci grafico"
+                      >
+                        <Maximize2 size={14} />
+                      </button>
+                      {onDeleteChart && (
+                        <button
+                          onClick={() => !isDeleting && onDeleteChart(chartConfig.id)}
+                          disabled={isDeleting}
+                          className={`p-1.5 bg-red-600 hover:bg-red-700 text-white rounded-md transition-opacity duration-200 ${
+                            isDeleting ? 'opacity-100 cursor-not-allowed' : 'opacity-0 group-hover:opacity-100'
+                          }`}
+                          title={isDeleting ? 'Eliminazione in corso...' : 'Elimina grafico'}
+                        >
+                          {isDeleting ? (
+                            <Loader2 size={14} className="animate-spin" />
+                          ) : (
+                            <Trash2 size={14} />
+                          )}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </ChartErrorBoundary>
+              );
+            })}
           </div>
         )}
       </div>
+
+      {/* KPI Expanded Dialog */}
+      {expandedKPI && (
+        <div 
+          className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-8"
+          onClick={() => setExpandedKPI(null)}
+        >
+          <div 
+            className="bg-gray-900 rounded-lg border border-gray-700 w-full max-w-4xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-6 border-b border-gray-700">
+              <h2 className="text-xl font-semibold text-white">
+                {expandedKPI.title}
+              </h2>
+              <button
+                onClick={() => setExpandedKPI(null)}
+                className="text-gray-400 hover:text-white transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="p-8">
+              <div className="flex items-center justify-center min-h-[400px]">
+                <ChartErrorBoundary chartTitle={expandedKPI.title}>
+                  <div className="w-full max-w-2xl">
+                    <KPICard
+                      config={{...expandedKPI}}
+                      data={data}
+                    />
+                  </div>
+                </ChartErrorBoundary>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Chart Expanded Dialog */}
+      {expandedChart && (
+        <div 
+          className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-8"
+          onClick={() => setExpandedChart(null)}
+        >
+          <div 
+            className="bg-gray-900 rounded-lg border border-gray-700 w-full h-full max-w-7xl max-h-[90vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-6 border-b border-gray-700 flex-shrink-0">
+              <h2 className="text-xl font-semibold text-white">
+                {expandedChart.title}
+              </h2>
+              <button
+                onClick={() => setExpandedChart(null)}
+                className="text-gray-400 hover:text-white transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="p-8 flex-1 overflow-hidden">
+              <ChartErrorBoundary chartTitle={expandedChart.title}>
+                <div className="w-full h-full">
+                  <ChartRenderer
+                    config={{...expandedChart}}
+                    data={data}
+                  />
+                </div>
+              </ChartErrorBoundary>
+            </div>
+          </div>
+        </div>
+      )}
     </ChartErrorBoundary>
   );
 }

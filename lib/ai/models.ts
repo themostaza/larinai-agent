@@ -22,64 +22,16 @@ export interface ModelConfig {
 }
 
 // Lista completa dei modelli disponibili
+// NOTA: Attualmente forzato solo Claude Sonnet 4.5
 export const AVAILABLE_MODELS: ModelConfig[] = [
-  // ===== OpenAI Models =====
-  {
-    id: 'openai:gpt-5-mini',
-    name: 'GPT-5 Mini',
-    provider: 'OpenAI',
-    description: 'Veloce ed efficiente, ottimo rapporto qualità/prezzo',
-    category: 'fast',
-    contextWindow: 200000,
-    maxOutput: 100000,
-  },
-  {
-    id: 'openai:gpt-5',
-    name: 'GPT-5',
-    provider: 'OpenAI',
-    description: 'Massima potenza OpenAI, ragionamento avanzato',
-    category: 'pro',
-    contextWindow: 200000,
-    maxOutput: 100000,
-  },
-
   // ===== Anthropic Models =====
   {
-    id: 'anthropic:claude-sonnet-4-0',
-    name: 'Claude 4.0',
-    provider: 'Anthropic',
-    description: 'Equilibrio perfetto tra velocità e qualità',
-    category: 'smart',
-    contextWindow: 200000,
-    maxOutput: 8192,
-  },
-  {
     id: 'anthropic:claude-sonnet-4-5',
-    name: 'Claude 4.5',
+    name: 'Claude Sonnet 4.5',
     provider: 'Anthropic',
     description: 'Ultima generazione Anthropic, capacità di ragionamento superiori',
     category: 'pro',
     contextWindow: 200000,
-    maxOutput: 8192,
-  },
-
-  // ===== Google Gemini Models =====
-  {
-    id: 'google:gemini-2.5-flash',
-    name: 'Gemini 2.5 Flash',
-    provider: 'Google',
-    description: 'Velocissimo e multimodale, ideale per task rapidi',
-    category: 'fast',
-    contextWindow: 1000000,
-    maxOutput: 8192,
-  },
-  {
-    id: 'google:gemini-2.5-pro',
-    name: 'Gemini 2.5 Pro',
-    provider: 'Google',
-    description: 'Massima qualità Google, grounding e multimodalità avanzata',
-    category: 'pro',
-    contextWindow: 2000000,
     maxOutput: 8192,
   },
 ];

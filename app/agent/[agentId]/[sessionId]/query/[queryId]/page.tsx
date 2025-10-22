@@ -111,6 +111,8 @@ export default function QueryPage() {
   const [showDownloadMenu, setShowDownloadMenu] = useState(false); // Show download format menu
   const [isDownloading, setIsDownloading] = useState(false); // Loading state for download
   const [currentPage, setCurrentPage] = useState(1); // Pagina corrente per paginazione
+  const [deletingKPIs, setDeletingKPIs] = useState<Set<string>>(new Set()); // IDs dei KPI in fase di eliminazione
+  const [deletingCharts, setDeletingCharts] = useState<Set<string>>(new Set()); // IDs dei grafici in fase di eliminazione
   const [pageSize, setPageSize] = useState(100); // Numero di record per pagina
   const [isLoadingFreshData, setIsLoadingFreshData] = useState(false); // Loading per dati freschi all'apertura
   const [freshData, setFreshData] = useState<unknown[] | null>(null); // Dati freschi caricati automaticamente
@@ -292,6 +294,150 @@ export default function QueryPage() {
       }
     } finally {
       setIsSavingSchema(false);
+    }
+  };
+
+  // Funzione per eliminare un KPI
+  const handleDeleteKPI = async (kpiId: string) => {
+    if (!queryData?.message?.dbId || !chartsConfig) return;
+
+    // Aggiungi l'ID al Set degli elementi in eliminazione
+    setDeletingKPIs(prev => new Set(prev).add(kpiId));
+
+    try {
+      // Crea nuova configurazione senza il KPI eliminato
+      const updatedConfig = {
+        ...chartsConfig,
+        kpis: chartsConfig.kpis?.filter(kpi => kpi.id !== kpiId) || []
+      };
+
+      // Salva la nuova configurazione
+      const response = await fetch('/api/query/save', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          chatMessageId: queryData.message.dbId,
+          chartKpi: updatedConfig
+        })
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        // Mostra notifica di successo
+        setNotification({
+          type: 'success',
+          message: '✅ KPI eliminato con successo!'
+        });
+        
+        // Attendi un po' prima di rimuovere la card per far vedere il messaggio
+        setTimeout(() => {
+          setChartsConfig(updatedConfig);
+          // Rimuovi l'ID dal Set
+          setDeletingKPIs(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(kpiId);
+            return newSet;
+          });
+        }, 500);
+      } else {
+        setNotification({
+          type: 'error',
+          message: 'Errore nell\'eliminazione: ' + (result.error || 'Errore sconosciuto')
+        });
+        // Rimuovi l'ID dal Set in caso di errore
+        setDeletingKPIs(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(kpiId);
+          return newSet;
+        });
+      }
+    } catch (error) {
+      console.error('Error deleting KPI:', error);
+      setNotification({
+        type: 'error',
+        message: 'Errore nell\'eliminazione del KPI'
+      });
+      // Rimuovi l'ID dal Set in caso di errore
+      setDeletingKPIs(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(kpiId);
+        return newSet;
+      });
+    }
+  };
+
+  // Funzione per eliminare un grafico
+  const handleDeleteChart = async (chartId: string) => {
+    if (!queryData?.message?.dbId || !chartsConfig) return;
+
+    // Aggiungi l'ID al Set degli elementi in eliminazione
+    setDeletingCharts(prev => new Set(prev).add(chartId));
+
+    try {
+      // Crea nuova configurazione senza il grafico eliminato
+      const updatedConfig = {
+        ...chartsConfig,
+        charts: chartsConfig.charts?.filter(chart => chart.id !== chartId) || []
+      };
+
+      // Salva la nuova configurazione
+      const response = await fetch('/api/query/save', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          chatMessageId: queryData.message.dbId,
+          chartKpi: updatedConfig
+        })
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        // Mostra notifica di successo
+        setNotification({
+          type: 'success',
+          message: '✅ Grafico eliminato con successo!'
+        });
+        
+        // Attendi un po' prima di rimuovere la card per far vedere il messaggio
+        setTimeout(() => {
+          setChartsConfig(updatedConfig);
+          // Rimuovi l'ID dal Set
+          setDeletingCharts(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(chartId);
+            return newSet;
+          });
+        }, 500);
+      } else {
+        setNotification({
+          type: 'error',
+          message: 'Errore nell\'eliminazione: ' + (result.error || 'Errore sconosciuto')
+        });
+        // Rimuovi l'ID dal Set in caso di errore
+        setDeletingCharts(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(chartId);
+          return newSet;
+        });
+      }
+    } catch (error) {
+      console.error('Error deleting chart:', error);
+      setNotification({
+        type: 'error',
+        message: 'Errore nell\'eliminazione del grafico'
+      });
+      // Rimuovi l'ID dal Set in caso di errore
+      setDeletingCharts(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(chartId);
+        return newSet;
+      });
     }
   };
 
@@ -1396,6 +1542,10 @@ export default function QueryPage() {
                   setIsAgentSidebarOpen(true);
                 }
               }}
+              onDeleteKPI={handleDeleteKPI}
+              onDeleteChart={handleDeleteChart}
+              deletingKPIs={deletingKPIs}
+              deletingCharts={deletingCharts}
             />
           )}
           

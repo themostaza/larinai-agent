@@ -425,48 +425,50 @@ Come posso supportarti?`
           </button>
         </form>
         
-        {/* Model Selector */}
-        <div className="mt-2 relative w-full" ref={modelDropdownRef}>
-          <button
-            onClick={() => setIsModelDropdownOpen(!isModelDropdownOpen)}
-            className="w-fit flex items-center justify-between px-2 py-1 bg-gray-800 border border-gray-700 rounded text-xs text-gray-400 hover:text-gray-300 hover:border-gray-600 transition-colors"
-          >
-            <span className="truncate">
-              {AVAILABLE_MODELS.find(m => m.id === selectedModel)?.name || 'Seleziona modello'}
-            </span>
-            <ChevronDown size={12} className={`ml-1 flex-shrink-0 transition-transform ${isModelDropdownOpen ? 'rotate-180' : ''}`} />
-          </button>
+        {/* Model Selector - nascosto se c'è solo un modello disponibile */}
+        {AVAILABLE_MODELS.length > 1 && (
+          <div className="mt-2 relative w-full" ref={modelDropdownRef}>
+            <button
+              onClick={() => setIsModelDropdownOpen(!isModelDropdownOpen)}
+              className="w-fit flex items-center justify-between px-2 py-1 bg-gray-800 border border-gray-700 rounded text-xs text-gray-400 hover:text-gray-300 hover:border-gray-600 transition-colors"
+            >
+              <span className="truncate">
+                {AVAILABLE_MODELS.find(m => m.id === selectedModel)?.name || 'Seleziona modello'}
+              </span>
+              <ChevronDown size={12} className={`ml-1 flex-shrink-0 transition-transform ${isModelDropdownOpen ? 'rotate-180' : ''}`} />
+            </button>
 
-          {/* Dropdown Menu */}
-          {isModelDropdownOpen && (
-            <div className="absolute bottom-full left-0 right-0 mb-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl max-h-64 overflow-y-auto z-50 w-full">
-              {Object.entries(getModelsByProvider()).map(([provider, models]) => (
-                models.length > 0 && (
-                  <div key={provider}>
-                    <div className="px-3 py-2 text-xs font-semibold text-gray-500 border-b border-gray-700">
-                      {provider}
+            {/* Dropdown Menu */}
+            {isModelDropdownOpen && (
+              <div className="absolute bottom-full left-0 right-0 mb-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl max-h-64 overflow-y-auto z-50 w-full">
+                {Object.entries(getModelsByProvider()).map(([provider, models]) => (
+                  models.length > 0 && (
+                    <div key={provider}>
+                      <div className="px-3 py-2 text-xs font-semibold text-gray-500 border-b border-gray-700">
+                        {provider}
+                      </div>
+                      {models.map((model) => (
+                        <button
+                          key={model.id}
+                          onClick={() => {
+                            setSelectedModel(model.id);
+                            setIsModelDropdownOpen(false);
+                          }}
+                          className={`w-full px-3 py-2 text-left text-xs hover:bg-gray-700 transition-colors ${
+                            selectedModel === model.id ? 'bg-gray-700 text-white' : 'text-gray-300'
+                          }`}
+                        >
+                          <div className="font-medium">{model.name}</div>
+                          <div className="text-gray-500 text-[10px] mt-0.5">{model.description}</div>
+                        </button>
+                      ))}
                     </div>
-                    {models.map((model) => (
-                      <button
-                        key={model.id}
-                        onClick={() => {
-                          setSelectedModel(model.id);
-                          setIsModelDropdownOpen(false);
-                        }}
-                        className={`w-full px-3 py-2 text-left text-xs hover:bg-gray-700 transition-colors ${
-                          selectedModel === model.id ? 'bg-gray-700 text-white' : 'text-gray-300'
-                        }`}
-                      >
-                        <div className="font-medium">{model.name}</div>
-                        <div className="text-gray-500 text-[10px] mt-0.5">{model.description}</div>
-                      </button>
-                    ))}
-                  </div>
-                )
-              ))}
-            </div>
-          )}
-        </div>
+                  )
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

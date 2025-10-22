@@ -376,8 +376,8 @@ export default function ChatSidebar({ currentSessionId, agentId, onSessionSelect
             </span>
           </button>
 
-          {/* Model Selector - Compatto */}
-          {selectedModel && onModelChange && (
+          {/* Model Selector - Compatto - nascosto se c'è solo un modello disponibile */}
+          {selectedModel && onModelChange && AVAILABLE_MODELS.length > 1 && (
             <div className="relative" ref={modelDropdownRef}>
               <button
                 onClick={() => setIsModelDropdownOpen(!isModelDropdownOpen)}
