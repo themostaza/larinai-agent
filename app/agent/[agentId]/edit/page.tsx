@@ -335,15 +335,17 @@ export default function AgentEditPage() {
         if (data.success) {
           setToolsConfig(updatedToolsConfig);
           setOriginalToolsConfig(updatedToolsConfig);
-          setShowConfigSheet(false);
+          // Non chiudiamo più il dialog - lo gestisce il componente figlio
+          return { success: true };
         } else {
-          alert(`Errore nel salvataggio: ${data.error}`);
+          return { success: false, error: data.error };
         }
       } catch (err) {
         console.error('Error saving tool config:', err);
-        alert('Errore di connessione durante il salvataggio');
+        return { success: false, error: 'Errore di connessione durante il salvataggio' };
       }
     }
+    return { success: false, error: 'Tool ID non valido' };
   };
 
   if (isLoading) {
@@ -562,13 +564,13 @@ export default function AgentEditPage() {
 // SQL Tool Configuration Sheet Component
 interface SQLToolConfigSheetProps {
   config: SQLToolConfig;
-  onSave: (config: SQLToolConfig) => void;
+  onSave: (config: SQLToolConfig) => Promise<{ success: boolean; error?: string }>;
   onClose: () => void;
 }
 
 function SQLToolConfigSheet({ config, onSave, onClose }: SQLToolConfigSheetProps) {
   const [formData, setFormData] = useState<SQLToolConfig>(config);
-  const [originalFormData] = useState<SQLToolConfig>(config);
+  const [originalFormData, setOriginalFormData] = useState<SQLToolConfig>(config);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [isTestingConnection, setIsTestingConnection] = useState(false);
@@ -576,6 +578,12 @@ function SQLToolConfigSheet({ config, onSave, onClose }: SQLToolConfigSheetProps
   const [dbSchema, setDbSchema] = useState<DbSchema | null>(null);
   const [isCopied, setIsCopied] = useState(false);
   const [activeTab, setActiveTab] = useState<'database' | 'policy'>('database');
+  
+  // New state for dialogs
+  const [showTestResultDialog, setShowTestResultDialog] = useState(false);
+  const [testResultMessage, setTestResultMessage] = useState<{ success: boolean; message: string } | null>(null);
+  const [showSaveErrorDialog, setShowSaveErrorDialog] = useState(false);
+  const [saveErrorMessage, setSaveErrorMessage] = useState('');
 
   // Check if there are unsaved changes
   const hasChanges = () => {
@@ -586,16 +594,24 @@ function SQLToolConfigSheet({ config, onSave, onClose }: SQLToolConfigSheetProps
     if (!hasChanges() || isSaving) return;
     
     setIsSaving(true);
-    await onSave(formData);
-    setSaveSuccess(true);
+    const result = await onSave(formData);
     setIsSaving(false);
-    setTimeout(() => {
-      setSaveSuccess(false);
-      // Il componente si chiuderà dopo aver mostrato il successo
-    }, 1500);
+    
+    if (result.success) {
+      // Update the original data to reflect saved state
+      setOriginalFormData(formData);
+      setSaveSuccess(true);
+      setTimeout(() => {
+        setSaveSuccess(false);
+      }, 3000);
+    } else {
+      // Show error dialog instead of alert
+      setSaveErrorMessage(result.error || 'Errore sconosciuto durante il salvataggio');
+      setShowSaveErrorDialog(true);
+    }
   };
 
-  const handleTestConnection = async () => {
+  const performTestConnection = async (showDialog = true) => {
     setIsTestingConnection(true);
     try {
       const agentId = window.location.pathname.split('/')[2]; // Estrai agentId dall'URL
@@ -604,14 +620,52 @@ function SQLToolConfigSheet({ config, onSave, onClose }: SQLToolConfigSheetProps
 
       if (data.success) {
         setDbSchema(data.schema);
-        setShowSchemaDialog(true);
+        if (showDialog) {
+          setShowSchemaDialog(true);
+        }
+        setTestResultMessage({
+          success: true,
+          message: `Connessione riuscita! Schema del database "${data.schema.database}" caricato con successo.`
+        });
       } else {
-        alert(`Errore: ${data.error}`);
+        setTestResultMessage({
+          success: false,
+          message: data.error || 'Errore sconosciuto durante il test della connessione'
+        });
+        setShowTestResultDialog(true);
       }
     } catch (error) {
-      alert(`Errore nella connessione: ${error instanceof Error ? error.message : 'Errore sconosciuto'}`);
+      setTestResultMessage({
+        success: false,
+        message: `Errore nella connessione: ${error instanceof Error ? error.message : 'Errore sconosciuto'}`
+      });
+      setShowTestResultDialog(true);
     } finally {
       setIsTestingConnection(false);
+    }
+  };
+
+  const handleTestConnection = async (showDialog = true) => {
+    // If there are unsaved changes, save first
+    if (hasChanges()) {
+      setIsSaving(true);
+      const result = await onSave(formData);
+      setIsSaving(false);
+      
+      if (result.success) {
+        setOriginalFormData(formData);
+        setSaveSuccess(true);
+        setTimeout(() => {
+          setSaveSuccess(false);
+        }, 2000);
+        // Proceed with test
+        await performTestConnection(showDialog);
+      } else {
+        setSaveErrorMessage(result.error || 'Errore sconosciuto durante il salvataggio');
+        setShowSaveErrorDialog(true);
+      }
+    } else {
+      await performTestConnection(showDialog);
     }
   };
 
@@ -909,11 +963,16 @@ function SQLToolConfigSheet({ config, onSave, onClose }: SQLToolConfigSheetProps
               <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 mt-4">
                 <button
                   type="button"
-                  onClick={handleTestConnection}
-                  disabled={isTestingConnection}
+                  onClick={() => handleTestConnection(true)}
+                  disabled={isTestingConnection || isSaving}
                   className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-white text-black font-medium rounded-lg hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {isTestingConnection ? (
+                  {isSaving ? (
+                    <>
+                      <Loader2 className="animate-spin" size={20} />
+                      Salvataggio...
+                    </>
+                  ) : isTestingConnection ? (
                     <>
                       <Loader2 className="animate-spin" size={20} />
                       Test connessione in corso...
@@ -921,12 +980,14 @@ function SQLToolConfigSheet({ config, onSave, onClose }: SQLToolConfigSheetProps
                   ) : (
                     <>
                       <Database size={20} />
-                      Test Database Connection
+                      {hasChanges() ? 'Salva e testa connessione' : 'Testa la connessione al database'}
                     </>
                   )}
                 </button>
                 <p className="text-xs text-gray-400 mt-2 text-center">
-                  Testa la connessione ed estrai lo schema completo del database
+                  {hasChanges() 
+                    ? 'Salva la configurazione e testa la connessione al database' 
+                    : 'Testa la connessione ed estrai lo schema completo del database'}
                 </p>
               </div>
               </>
@@ -937,7 +998,7 @@ function SQLToolConfigSheet({ config, onSave, onClose }: SQLToolConfigSheetProps
                 <PolicyConfiguration
                   config={formData}
                   onConfigChange={setFormData}
-                  onTestConnection={handleTestConnection}
+                  onTestConnection={() => handleTestConnection(false)}
                   isTestingConnection={isTestingConnection}
                 />
               )}
@@ -1055,6 +1116,44 @@ function SQLToolConfigSheet({ config, onSave, onClose }: SQLToolConfigSheetProps
           </div>
         </div>
       )}
+
+      {/* Test Connection Result Dialog */}
+      {showTestResultDialog && testResultMessage && (
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
+          <div className="bg-gray-900 rounded-lg border border-gray-800 p-6 max-w-md w-full">
+            <h3 className={`text-lg font-semibold mb-2 ${testResultMessage.success ? 'text-green-400' : 'text-red-400'}`}>
+              {testResultMessage.success ? 'Connessione Riuscita' : 'Errore di Connessione'}
+            </h3>
+            <p className="text-gray-300 text-sm mb-6">
+              {testResultMessage.message}
+            </p>
+            <button
+              onClick={() => setShowTestResultDialog(false)}
+              className="w-full px-4 py-2 bg-white text-black font-medium rounded-lg hover:bg-gray-100 transition-colors"
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Save Error Dialog */}
+      {showSaveErrorDialog && (
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
+          <div className="bg-gray-900 rounded-lg border border-gray-800 p-6 max-w-md w-full">
+            <h3 className="text-lg font-semibold text-red-400 mb-2">Errore di Salvataggio</h3>
+            <p className="text-gray-300 text-sm mb-6">
+              {saveErrorMessage}
+            </p>
+            <button
+              onClick={() => setShowSaveErrorDialog(false)}
+              className="w-full px-4 py-2 bg-white text-black font-medium rounded-lg hover:bg-gray-100 transition-colors"
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1062,15 +1161,17 @@ function SQLToolConfigSheet({ config, onSave, onClose }: SQLToolConfigSheetProps
 // Text Search Tool Configuration Sheet Component
 interface TextSearchToolConfigSheetProps {
   config: TextSearchToolConfig;
-  onSave: (config: TextSearchToolConfig) => void;
+  onSave: (config: TextSearchToolConfig) => Promise<{ success: boolean; error?: string }>;
   onClose: () => void;
 }
 
 function TextSearchToolConfigSheet({ config, onSave, onClose }: TextSearchToolConfigSheetProps) {
   const [formData, setFormData] = useState<TextSearchToolConfig>(config);
-  const [originalFormData] = useState<TextSearchToolConfig>(config);
+  const [originalFormData, setOriginalFormData] = useState<TextSearchToolConfig>(config);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [showSaveErrorDialog, setShowSaveErrorDialog] = useState(false);
+  const [saveErrorMessage, setSaveErrorMessage] = useState('');
 
   // Funzione per estrarre il titolo dal contenuto
   const extractTitle = (content: string): string => {
@@ -1105,12 +1206,19 @@ function TextSearchToolConfigSheet({ config, onSave, onClose }: TextSearchToolCo
       title
     };
     
-    await onSave(configToSave);
-    setSaveSuccess(true);
+    const result = await onSave(configToSave);
     setIsSaving(false);
-    setTimeout(() => {
-      setSaveSuccess(false);
-    }, 1500);
+    
+    if (result.success) {
+      setOriginalFormData(formData);
+      setSaveSuccess(true);
+      setTimeout(() => {
+        setSaveSuccess(false);
+      }, 3000);
+    } else {
+      setSaveErrorMessage(result.error || 'Errore sconosciuto durante il salvataggio');
+      setShowSaveErrorDialog(true);
+    }
   };
 
   return (
@@ -1218,6 +1326,24 @@ function TextSearchToolConfigSheet({ config, onSave, onClose }: TextSearchToolCo
           </div>
         </form>
       </div>
+
+      {/* Save Error Dialog */}
+      {showSaveErrorDialog && (
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
+          <div className="bg-gray-900 rounded-lg border border-gray-800 p-6 max-w-md w-full">
+            <h3 className="text-lg font-semibold text-red-400 mb-2">Errore di Salvataggio</h3>
+            <p className="text-gray-300 text-sm mb-6">
+              {saveErrorMessage}
+            </p>
+            <button
+              onClick={() => setShowSaveErrorDialog(false)}
+              className="w-full px-4 py-2 bg-white text-black font-medium rounded-lg hover:bg-gray-100 transition-colors"
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
