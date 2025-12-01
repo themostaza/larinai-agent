@@ -192,9 +192,6 @@ export default function AgentBoardPage() {
   }
 
   const enabledTools = getToolNames();
-  const successRate = stats && stats.toolExecutions.total > 0
-    ? Math.round((stats.toolExecutions.successful / stats.toolExecutions.total) * 100)
-    : 0;
 
   return (
     <div className="min-h-screen bg-black text-white">
@@ -290,15 +287,6 @@ export default function AgentBoardPage() {
               iconColor="text-green-400"
             />
             <StatCard
-              icon={Zap}
-              title="Tool Executions"
-              value={stats?.toolExecutions.total || 0}
-              subtitle={stats && stats.toolExecutions.total > 0
-                ? `${successRate}% successo`
-                : 'Nessuna esecuzione'}
-              iconColor="text-purple-400"
-            />
-            <StatCard
               icon={Clock}
               title="Ultima Attività"
               value={stats?.lastActivityAt ? 'Attivo' : 'Mai'}
@@ -307,36 +295,6 @@ export default function AgentBoardPage() {
             />
           </div>
         </div>
-
-        {/* Additional Stats */}
-        {stats && stats.toolExecutions.total > 0 && (
-          <div className="mb-8">
-            <h2 className="text-xl font-bold mb-4">Dettaglio Tool</h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <StatCard
-                icon={CheckCircle}
-                title="Esecuzioni Riuscite"
-                value={stats.toolExecutions.successful}
-                subtitle={`${Math.round((stats.toolExecutions.successful / stats.toolExecutions.total) * 100)}% del totale`}
-                iconColor="text-green-500"
-              />
-              <StatCard
-                icon={XCircle}
-                title="Esecuzioni Fallite"
-                value={stats.toolExecutions.failed}
-                subtitle={`${Math.round((stats.toolExecutions.failed / stats.toolExecutions.total) * 100)}% del totale`}
-                iconColor="text-red-500"
-              />
-              <StatCard
-                icon={Zap}
-                title="Totale Esecuzioni"
-                value={stats.toolExecutions.total}
-                subtitle="Tool chiamati dall'agent"
-                iconColor="text-purple-400"
-              />
-            </div>
-          </div>
-        )}
 
         {/* Information Cards */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
